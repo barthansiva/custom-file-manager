@@ -80,8 +80,6 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     GtkWidget *icon = gtk_widget_get_first_child(box);
     GtkWidget *label = gtk_widget_get_next_sibling(icon);
 
-    g_print("Binding file item\n");
-
     GFile *file = G_FILE(gtk_list_item_get_item(list_item));
     if (!file) {
         g_warning("No file available for list item");

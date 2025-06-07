@@ -104,7 +104,6 @@ void file_clicked(GtkGridView* view, guint position, gpointer user_data) {
 
     GListStore *files = G_LIST_STORE(user_data);
     GFile *file = g_list_model_get_item(G_LIST_MODEL(files), position);
-    g_print("File %s clicked\n", g_file_get_basename(file));
 
     GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileType type = g_file_info_get_file_type(info);

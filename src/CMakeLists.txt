@@ -15,6 +15,5 @@ add_executable(file_manager main.c
         utils.c
         utils.h
         ui_builder.c
-        ui_builder.h
-        main.h)
+        ui_builder.h)
 target_link_libraries(file_manager ${GTK_LIBRARIES})
