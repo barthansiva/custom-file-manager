@@ -65,20 +65,3 @@ GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
 
     return files;
 }
-
-/**
- * Frees memory allocated for a generic data pointer
- * @param data Pointer to the data to free
- */
-void free_data(const gpointer data) {
-    free(data);
-}
-
-/**
- * Connects a destroy signal to a widget to free the associated data
- * @param widget The widget to connect the signal to
- * @param data Pointer to the data to free when the widget is destroyed
- */
-void free_on_destroy(GtkWidget* widget, gpointer data) {
-    g_signal_connect_data(widget, "destroy", G_CALLBACK(free_data), data, NULL, G_CONNECT_SWAPPED);
-}

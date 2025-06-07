@@ -7,7 +7,7 @@ GtkWidget *main_file_container;
 char *current_directory = NULL;
 
 // Function declarations
-void file_clicked(GtkWidget *widget, gpointer file_data);
+void file_clicked(GtkGridView* view, guint position, gpointer user_data);
 
 /**
  * Totally not AI-generated code documentation
@@ -16,28 +16,21 @@ void file_clicked(GtkWidget *widget, gpointer file_data);
  * @return TRUE if successful, FALSE otherwise
  */
 gboolean populate_files(const char* directory) {
-    // Store current directory
-    char* dir_copy = strdup(directory);
-    if (!dir_copy) {
-        g_warning("Failed to allocate memory for directory path");
-        return FALSE;
-    }
 
-    // Clean up old directory path
     if (current_directory != NULL) {
         free(current_directory);
     }
-    current_directory = dir_copy;
 
-    // Clear any existing content first
+    current_directory = strdup(directory);
+
+    // Clear the old views
     GtkWidget* old_child = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(main_file_container));
     if (old_child) {
-        // Remove old child (this will destroy the widget)
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(main_file_container), NULL);
     }
 
     // Read all files in the specified directory
-    size_t file_count = 0;
+    size_t file_count = 0; //The file count in case we need it later
     GListStore *files = get_files_in_directory(directory, &file_count);
 
     if (files == NULL) {
@@ -52,17 +45,21 @@ gboolean populate_files(const char* directory) {
 
     GtkWidget* view = gtk_grid_view_new(GTK_SELECTION_MODEL(selection), factory);
 
+    gtk_grid_view_set_single_click_activate(GTK_GRID_VIEW(view),FALSE);
+    g_signal_connect(view, "activate", G_CALLBACK(file_clicked), files);
+
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(main_file_container), view);
 
-    // Release our reference to files since the model now holds one
-    g_object_unref(files);
     // Release our reference to the factory
     g_object_unref(factory);
 
     return TRUE;
 }
 
-// Right now its just a box with a label and a flowbox (file_container)
+/**
+ * Creates the core widget structure for the app
+ * @return GtkWidget* containing the side box
+ */
 static void init(GtkApplication *app, gpointer user_data) {
 
     GtkWidget *window;
@@ -95,72 +92,29 @@ static void init(GtkApplication *app, gpointer user_data) {
     populate_files("/home"); //Default directory, maybe make it configurable later
 }
 
+
 /**
- * Handles file/directory item clicks
- * @param widget The clicked widget (the button)
- * @param user_data Not used (NULL)
+ * Callback function for when a file is double-clicked in the grid view
+ * @param view The GtkGridView that was clicked
+ * @param position The position of the clicked item
+ * @param user_data User data passed to the callback (in this case, the GListStore of files)
  */
-void file_clicked(GtkWidget *widget, gpointer user_data) {
-    g_print("File clicked\n");
 
-    // Get the file path from the button's data
-    const char *path = g_object_get_data(G_OBJECT(widget), "file-path");
-    if (!path) {
-        g_warning("No file path found in button data");
-        return;
-    }
+void file_clicked(GtkGridView* view, guint position, gpointer user_data) {
 
-    g_print("Path from button: %s\n", path);
+    GListStore *files = G_LIST_STORE(user_data);
+    GFile *file = g_list_model_get_item(G_LIST_MODEL(files), position);
+    g_print("File %s clicked\n", g_file_get_basename(file));
 
-    // Create a GFile from the path
-    GFile *file = g_file_new_for_path(path);
-    if (!file) {
-        g_warning("Failed to create GFile from path");
-        return;
-    }
-
-    GError *error = NULL;
-
-    GFileInfo* info = g_file_query_info(file,
-                      G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME,
-                      G_FILE_QUERY_INFO_NONE,
-                      NULL,
-                      &error);
-
-    if (error != NULL) {
-        g_warning("Error getting file info: %s", error->message);
-        g_error_free(error);
-        g_object_unref(file);
-        return;
-    }
-
-    if (!info) {
-        g_warning("Failed to get file info");
-        g_object_unref(file);
-        return;
-    }
-
+    GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileType type = g_file_info_get_file_type(info);
 
     if (type == G_FILE_TYPE_DIRECTORY) {
-        // It's a directory, populate the file container with its contents
-        g_print("Directory clicked: %s\n", path);
-
-        // Release resources before populating files
-        g_object_unref(info);
-        g_object_unref(file);
-
-        populate_files(path);
+        // If it's a directory, populate the file container with its contents
+        populate_files(g_file_get_path(file));
     } else {
-        // It's a regular file, just print info for now
-        const char *name = g_file_info_get_display_name(info);
-        goffset size = g_file_info_get_size(info);
-
-        g_print("File clicked: %s (%.2f KB)\n", name ? name : "Unknown", size / 1024.0);
-
-        // Release resources
-        g_object_unref(info);
-        g_object_unref(file);
+        // Print info for now
+        g_print("File %s clicked\n", g_file_get_basename(file));
     }
 }
 
@@ -175,3 +129,5 @@ int main(int argc, char **argv) {
 
     return status;
 }
+
+

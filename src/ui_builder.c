@@ -1,10 +1,9 @@
 #include "ui_builder.h"
 #include "utils.h"
-#include "main.h"
 #include <stdlib.h>
 
 /**
- * Callback for g_file_query_info_async that sets the icon for the image widget
+ * Callback for g_file_query_info_async that sets the icon for the image widget of a file item.
  */
 static void on_file_info_ready(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     GFile *file = G_FILE(source_object);
@@ -22,18 +21,18 @@ static void on_file_info_ready(GObject *source_object, GAsyncResult *res, gpoint
     }
 }
 
+/**
+ * Sets up a list item factory for displaying files in a list.
+ * This function is called when the factory is created.
+ * It sets up the structure of each file item in the list. (only the structure, not the data)
+ *
+ * @param factory The GtkListItemFactory to set up
+ * @param list_item The GtkListItem to set up
+ */
 void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
-    // Everything is inside a button so we can click it
-    GtkWidget *button = gtk_button_new();
-    gtk_widget_set_focusable(button, TRUE);
-
-    // This makes it look not shit (flat button instead of a raised one)
-    GtkStyleContext *context = gtk_widget_get_style_context(button);
-    gtk_style_context_add_class(context, "flat");
-
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_button_set_child(GTK_BUTTON(button), box);
+    gtk_widget_set_focusable(box, TRUE);
 
     //
     // Creating icon
@@ -64,12 +63,21 @@ void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     gtk_widget_set_halign(label, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(label, GTK_ALIGN_END);
 
-    gtk_list_item_set_child(list_item, button);
+    gtk_list_item_set_child(list_item, box);
 }
 
+/**
+ * Binds data to a list item factory for displaying files in a list.
+ * This function is called when the factory is used to create a list item.
+ * It updates the contents of the file item with the actual file data. (that way the same structure can be reused for different files)
+ *
+ * @param factory The GtkListItemFactory to set up
+ * @param list_item The GtkListItem to set up
+ */
 void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
-    GtkWidget *button = gtk_list_item_get_child(list_item);
-    GtkWidget *icon = gtk_widget_get_first_child(gtk_widget_get_first_child(button));
+
+    GtkWidget *box = gtk_list_item_get_child(list_item);
+    GtkWidget *icon = gtk_widget_get_first_child(box);
     GtkWidget *label = gtk_widget_get_next_sibling(icon);
 
     g_print("Binding file item\n");
@@ -81,25 +89,7 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     }
 
     // Update the label
-    char *basename = g_file_get_basename(file);
-    gtk_label_set_text(GTK_LABEL(label), basename);
-    g_free(basename);  // Free the basename
-
-    // Store the path as a string in button data instead of the GFile object
-    char *file_path = g_file_get_path(file);
-    if (file_path) {
-        // Set the path as a property on the button
-        g_object_set_data_full(G_OBJECT(button), "file-path",
-                              g_strdup(file_path), (GDestroyNotify)g_free);
-        g_free(file_path);
-    }
-
-    // Disconnect any existing signal handler to avoid duplicates
-    g_signal_handlers_disconnect_by_func(button, G_CALLBACK(file_clicked), NULL);
-
-    // Connect click handler to the button without passing file data
-    g_signal_connect(button, "clicked", G_CALLBACK(file_clicked), NULL);
-
+    gtk_label_set_text(GTK_LABEL(label), g_file_get_basename(file));
     gtk_image_set_pixel_size(GTK_IMAGE(icon), 56);
 
     // Get file icon asynchronously
@@ -112,6 +102,10 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
                             icon);
 }
 
+/**
+ * Creates the widget structure for the side panel
+ * @return GtkWidget* containing the side panel
+ */
 GtkWidget* create_side_box(void) {
     // Create the side box
     GtkWidget* side_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
