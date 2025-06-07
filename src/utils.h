@@ -2,15 +2,7 @@
 #define UTILS_H
 
 #include <stddef.h>
-#include <time.h>
-#include <stdbool.h>
-
-typedef struct {
-    char* name;
-    double size_kb;
-    time_t modified_time;
-    bool is_dir;
-} file_t; // apparently when you define a struct you should add _t at the end of the name
+#include <gtk/gtk.h>
 
 /**
  * Gets files from a directory
@@ -18,23 +10,19 @@ typedef struct {
  * @param file_count Pointer to store the number of files found
  * @return Array of file_t structures (must be freed by the caller)
  */
-file_t* get_files_in_directory(const char* directory, size_t* file_count);
-
-//
-// These two function create copies and I still don't fully know why, but it doesn't work without it
-//
+GListStore* get_files_in_directory(const char* directory, size_t* file_count);
 
 /**
- * Creates a deep copy of a file_t structure
- * @param src Source file_t to copy
- * @return Pointer to a newly allocated file_t structure (must be freed by caller)
+ * Frees memory allocated for a generic data pointer
+ * @param data Pointer to the data to free
  */
-file_t* copy_file_data(const file_t* src);
+void free_data(const gpointer data);
 
 /**
- * Frees memory allocated for a file_t structure created with copy_file_data
- * @param file Pointer to the file_t structure to free
+ * Connects a destroy signal to a widget to free the associated data
+ * @param widget The widget to connect the signal to
+ * @param data Pointer to the data to free when the widget is destroyed
  */
-void free_file_data(file_t* file);
+void free_on_destroy(GtkWidget* widget, gpointer data);
 
 #endif //UTILS_H

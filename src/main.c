@@ -3,7 +3,7 @@
 #include "ui_builder.h"
 #include <stdlib.h>
 
-GtkWidget *file_container;
+GtkWidget *main_file_container;
 char *current_directory = NULL;
 
 // Function declarations
@@ -16,93 +16,78 @@ void file_clicked(GtkWidget *widget, gpointer file_data);
  * @return TRUE if successful, FALSE otherwise
  */
 gboolean populate_files(const char* directory) {
-
-    //
-    // Read all of the files in the specified directory
-    //
-
-    // Clear existing files
-    GtkWidget *child;
-    while ((child = gtk_widget_get_first_child(file_container)) != NULL) {
-        gtk_flow_box_remove(GTK_FLOW_BOX(file_container), child);
-    }
-
-    // strdup() creates a copy of a string
+    // Store current directory
     char* dir_copy = strdup(directory);
-
-    if (current_directory != NULL) {
-        free(current_directory); // I hate C
-    }
-    current_directory = dir_copy;
-
-    size_t file_count = 0;
-    file_t* files = get_files_in_directory(current_directory, &file_count);
-
-    if (files == NULL) {
-        g_printerr("Failed to read directory: %s\n", current_directory);
+    if (!dir_copy) {
+        g_warning("Failed to allocate memory for directory path");
         return FALSE;
     }
 
-    //
-    // Create all widgets for the files and populate the file_container
-    //
+    // Clean up old directory path
+    if (current_directory != NULL) {
+        free(current_directory);
+    }
+    current_directory = dir_copy;
 
-    GtkWidget** file_widgets = create_file_widgets(files, file_count, file_clicked);
-
-    for (size_t i = 0; i < file_count; i++) {
-        // position -1 means at the end
-        gtk_flow_box_insert(GTK_FLOW_BOX(file_container), file_widgets[i], -1);
+    // Clear any existing content first
+    GtkWidget* old_child = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(main_file_container));
+    if (old_child) {
+        // Remove old child (this will destroy the widget)
+        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(main_file_container), NULL);
     }
 
-    // more memory bs
-    free(file_widgets);
-    for (size_t i = 0; i < file_count; i++) {
-        free(files[i].name);
+    // Read all files in the specified directory
+    size_t file_count = 0;
+    GListStore *files = get_files_in_directory(directory, &file_count);
+
+    if (files == NULL) {
+        g_print("No files found in directory: %s\n", directory);
+        return FALSE; // No files found
     }
-    free(files);
+
+    GtkMultiSelection* selection = gtk_multi_selection_new(G_LIST_MODEL(files));
+    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_file_item), NULL);
+    g_signal_connect(factory, "bind", G_CALLBACK(bind_file_item), NULL);
+
+    GtkWidget* view = gtk_grid_view_new(GTK_SELECTION_MODEL(selection), factory);
+
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(main_file_container), view);
+
+    // Release our reference to files since the model now holds one
+    g_object_unref(files);
+    // Release our reference to the factory
+    g_object_unref(factory);
 
     return TRUE;
 }
 
 // Right now its just a box with a label and a flowbox (file_container)
 static void init(GtkApplication *app, gpointer user_data) {
+
     GtkWidget *window;
-    GtkWidget *vbox;
-    GtkWidget *label;
-    GtkWidget *scrolled_window;
+    GtkWidget *hpaned;
+    GtkWidget *side_box;
 
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "File Manager"); //Really original title
-    gtk_window_set_default_size(GTK_WINDOW(window), 600, 400);
+    gtk_window_set_default_size(GTK_WINDOW(window), 1600, 900);
 
     // Main container
-    vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
 
-    label = gtk_label_new("Test");
-    gtk_box_append(GTK_BOX(vbox), label); // <- Amazing, absolutely *NOT* object oriented code
+    main_file_container = gtk_scrolled_window_new();
 
-    // Create the file container (flowbox)
-    file_container = gtk_flow_box_new();
+    side_box = create_side_box();
 
-    //Selection kinda works with this but its weird, need to look into that
-    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(file_container), GTK_SELECTION_MULTIPLE);
+    gtk_paned_set_start_child (GTK_PANED (hpaned), side_box);
+    gtk_paned_set_shrink_start_child (GTK_PANED (hpaned), FALSE);
+    gtk_paned_set_resize_start_child (GTK_PANED (hpaned), FALSE);
 
-    gtk_widget_set_hexpand(file_container, TRUE);
-    gtk_widget_set_vexpand(file_container, TRUE);
+    gtk_paned_set_end_child (GTK_PANED (hpaned), main_file_container);
+    gtk_paned_set_shrink_end_child (GTK_PANED (hpaned), FALSE);
 
-    // Make file container child of a scrollable widget
-    scrolled_window = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled_window), file_container);
-
-    // GTK is actually kinda nice with the defaults (unlike Qt)
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window),
-                                  GTK_POLICY_AUTOMATIC,
-                                  GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_hexpand(scrolled_window, TRUE);
-    gtk_widget_set_vexpand(scrolled_window, TRUE);
-
-    gtk_box_append(GTK_BOX(vbox), scrolled_window);
-    gtk_window_set_child(GTK_WINDOW(window), vbox);
+    gtk_window_set_child(GTK_WINDOW(window), hpaned);
 
     // Show the window
     gtk_window_present(GTK_WINDOW(window));
@@ -112,27 +97,70 @@ static void init(GtkApplication *app, gpointer user_data) {
 
 /**
  * Handles file/directory item clicks
- * @param widget The clicked widget
- * @param file_data Pointer to the file_t data for the clicked item
+ * @param widget The clicked widget (the button)
+ * @param user_data Not used (NULL)
  */
-void file_clicked(GtkWidget *widget, gpointer file_data) {
-    file_t *file = file_data;
+void file_clicked(GtkWidget *widget, gpointer user_data) {
+    g_print("File clicked\n");
 
-    // Pretty self explanatory
-    if (file->is_dir) {
+    // Get the file path from the button's data
+    const char *path = g_object_get_data(G_OBJECT(widget), "file-path");
+    if (!path) {
+        g_warning("No file path found in button data");
+        return;
+    }
 
-        char path[1024];
+    g_print("Path from button: %s\n", path);
 
-        // Get full path of the clicked directory
-        snprintf(path, sizeof(path), "%s/%s", current_directory, file->name);
+    // Create a GFile from the path
+    GFile *file = g_file_new_for_path(path);
+    if (!file) {
+        g_warning("Failed to create GFile from path");
+        return;
+    }
 
-        free(current_directory); //I once again hate C
-        current_directory = strdup(path);
+    GError *error = NULL;
 
-        populate_files(current_directory);
+    GFileInfo* info = g_file_query_info(file,
+                      G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME,
+                      G_FILE_QUERY_INFO_NONE,
+                      NULL,
+                      &error);
+
+    if (error != NULL) {
+        g_warning("Error getting file info: %s", error->message);
+        g_error_free(error);
+        g_object_unref(file);
+        return;
+    }
+
+    if (!info) {
+        g_warning("Failed to get file info");
+        g_object_unref(file);
+        return;
+    }
+
+    GFileType type = g_file_info_get_file_type(info);
+
+    if (type == G_FILE_TYPE_DIRECTORY) {
+        // It's a directory, populate the file container with its contents
+        g_print("Directory clicked: %s\n", path);
+
+        // Release resources before populating files
+        g_object_unref(info);
+        g_object_unref(file);
+
+        populate_files(path);
     } else {
         // It's a regular file, just print info for now
-        g_print("File clicked: %s (%.2f KB)\n", file->name, file->size_kb);
+        const char *name = g_file_info_get_display_name(info);
+        goffset size = g_file_info_get_size(info);
+
+        g_print("File clicked: %s (%.2f KB)\n", name ? name : "Unknown", size / 1024.0);
+
+        // Release resources
+        g_object_unref(info);
+        g_object_unref(file);
     }
 }
 

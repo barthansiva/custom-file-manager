@@ -10,12 +10,24 @@
 typedef void (*FileClickHandler)(GtkWidget *widget, gpointer file_data);
 
 /**
- * Creates GTK widgets for an array of files
- * @param files Array of file_t structures
- * @param file_count Number of files in the array
- * @param click_handler Function to call when a file is clicked
- * @return Array of GtkWidget pointers (must be freed by the caller)
+ * Sets up a list item factory for displaying files in a list
+ * @param factory The GtkListItemFactory to set up
+ * @param list_item The GtkListItem to set up
  */
-GtkWidget** create_file_widgets(file_t* files, size_t file_count, FileClickHandler click_handler);
+void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item);
+
+/**
+ * Populates a list item factory for displaying files in a list
+ * @param factory The GtkListItemFactory to set up
+ * @param list_item The GtkListItem to set up
+ * @param click_handler Function to call when a file button is clicked
+ */
+void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item);
+
+/**
+ * Creates the widget structure for the side panel
+ * @return GtkWidget* containing the side panel
+ */
+GtkWidget* create_side_box(void);
 
 #endif //UI_BUILDER_H

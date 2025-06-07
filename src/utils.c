@@ -3,62 +3,55 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <gtk/gtk.h>
 #include <sys/stat.h>
 
 /**
  * Gets files from a directory
  * @param directory Path to the directory
  * @param file_count Pointer to store the number of files found
- * @return Array of file_t structures (must be freed by the caller)
+ * @return GListStore of GFile objects representing the files/directories
  */
-file_t* get_files_in_directory(const char* directory, size_t* file_count) {
+GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
     DIR* dir;
     struct dirent* entry;
-    struct stat st;
     size_t count = 0;
-    size_t capacity = 10;  // random ahh guess
-    file_t* files = malloc(capacity * sizeof(file_t));
+
+    GListStore* files = g_list_store_new(G_TYPE_FILE);
 
     // Open directory
     if ((dir = opendir(directory)) == NULL) {
         perror("Failed to open directory");
+        g_object_unref(files);  // Clean up if we can't open the directory
         return NULL;
     }
-
-    char path[1024];
 
     // Loop over all of the files/directories in the directory
     while ((entry = readdir(dir)) != NULL) {
 
-        //Skip "." and ".." directories, I have no clue what those are
+        //Skip "." and ".." directories (idk what those are)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
-        // Get full path of the directory
-        snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
-
-        // Get file statistics
-        if (stat(path, &st) == -1) {
-            perror("No file stats");
-            continue;
+        // Get full path of the file/directory
+        char path[1024];
+        if (directory[strlen(directory) - 1] == '/') {
+            // Directory already ends with slash
+            snprintf(path, sizeof(path), "%s%s", directory, entry->d_name);
+        } else {
+            // Need to add a slash
+            snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
         }
 
-        // Resize when we reach capacity
-        if (count >= capacity) {
-            capacity *= 2;
-            file_t* temp = realloc(files, capacity * sizeof(file_t));
-            files = temp;
+        // Create a GFile for this path
+        GFile* file = g_file_new_for_path(path);
+        if (file) {
+            // Append it to our list store
+            g_list_store_append(files, file);
+            g_object_unref(file);  // The list store now owns a reference
+            count++;
         }
-
-        // Populate all of the stats
-
-        files[count].name = strdup(entry->d_name);
-        files[count].size_kb = (double)st.st_size / 1024.0;
-        files[count].modified_time = st.st_mtime;
-        files[count].is_dir = S_ISDIR(st.st_mode);
-
-        count++;
     }
 
     closedir(dir);
@@ -66,74 +59,26 @@ file_t* get_files_in_directory(const char* directory, size_t* file_count) {
 
     // If directory empty
     if (count == 0) {
-        free(files);
+        g_object_unref(files);
         return NULL;
-    }
-
-    // Maybe we overshot the capacity, so we can shrink it
-    if (count < capacity) {
-        file_t* temp = realloc(files, count * sizeof(file_t));
-        if (temp) {
-            files = temp;
-        }
     }
 
     return files;
 }
 
-//
-// These two function create copies and I still don't fully know why, but it doesn't work without it
-// 100 % AI generated code
-//
-
 /**
- * Creates a deep copy of a file_t structure
- * @param src Source file_t to copy
- * @return Pointer to a newly allocated file_t structure (must be freed by caller)
+ * Frees memory allocated for a generic data pointer
+ * @param data Pointer to the data to free
  */
-file_t* copy_file_data(const file_t* src) {
-    if (src == NULL) {
-        return NULL;
-    }
-
-    // Allocate memory for the new structure
-    file_t* dst = (file_t*) malloc(sizeof(file_t));
-    if (dst == NULL) {
-        return NULL;
-    }
-
-    // Copy scalar values
-    dst->size_kb = src->size_kb;
-    dst->modified_time = src->modified_time;
-    dst->is_dir = src->is_dir;
-
-    // Deep copy the name string
-    if (src->name != NULL) {
-        dst->name = strdup(src->name);
-        if (dst->name == NULL) {
-            // Failed to allocate memory for name
-            free(dst);
-            return NULL;
-        }
-    } else {
-        dst->name = NULL;
-    }
-
-    return dst;
+void free_data(const gpointer data) {
+    free(data);
 }
 
 /**
- * Frees memory allocated for a file_t structure created with copy_file_data
- * @param file Pointer to the file_t structure to free
+ * Connects a destroy signal to a widget to free the associated data
+ * @param widget The widget to connect the signal to
+ * @param data Pointer to the data to free when the widget is destroyed
  */
-void free_file_data(file_t* file) {
-    if (file == NULL) {
-        return;
-    }
-
-    // Free the name string
-    free(file->name);
-
-    // Free the structure itself
-    free(file);
+void free_on_destroy(GtkWidget* widget, gpointer data) {
+    g_signal_connect_data(widget, "destroy", G_CALLBACK(free_data), data, NULL, G_CONNECT_SWAPPED);
 }
