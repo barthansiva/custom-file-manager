@@ -17,15 +17,26 @@ void directory_entry_changed(  GtkEntry* self, gpointer user_data);
 
 void go_up_a_directory();
 
+void on_close_tab_clicked(GtkButton *button, gpointer user_data);
+
+void on_back_clicked(GtkButton *button, gpointer user_data);
+
+void on_forward_clicked(GtkButton *button, gpointer user_data);
+
 void add_tab_with_directory(const char* path);
 
 typedef struct {
     GtkWidget *scrolled_window;
-    char *current_path;
     GtkWidget *tab_label;
+    char *current_path;
+
+    GList *back_stack;
+    GList *forward_stack;
 } TabContext;
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx);
+
+void on_add_tab_clicked(GtkButton *button, gpointer user_data);
 
 /**
  * Totally not AI-generated code documentation
@@ -115,17 +126,41 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Store directory_entry in the global variable
     directory_entry = toolbar.directory_entry;
 
+    //
+    // Tabs
+    //
+    GtkWidget *back_button = gtk_button_new_from_icon_name("go-previous-symbolic");
+    gtk_widget_set_tooltip_text(back_button, "Back");
+
+    GtkWidget *forward_button = gtk_button_new_from_icon_name("go-next-symbolic");
+    gtk_widget_set_tooltip_text(forward_button, "Forward");
+
+    gtk_box_append(GTK_BOX(toolbar.toolbar), back_button);
+    gtk_box_append(GTK_BOX(toolbar.toolbar), forward_button);
+
+    // Connect signals
+    g_signal_connect(back_button, "clicked", G_CALLBACK(on_back_clicked), NULL);
+    g_signal_connect(forward_button, "clicked", G_CALLBACK(on_forward_clicked), NULL);
+
+
+    GtkWidget *add_tab_button = gtk_button_new_with_label("+");
+    gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
+    gtk_box_append(GTK_BOX(toolbar.toolbar), add_tab_button);
+
+    // Connect signal
+    g_signal_connect(add_tab_button, "clicked", G_CALLBACK(on_add_tab_clicked), NULL);
+
+
     // Connect signals
     g_signal_connect(toolbar.up_button, "clicked", G_CALLBACK(go_up_a_directory), NULL);
 
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
 
-
     //
     // Initial Tabs
     add_tab_with_directory("/home");
-    add_tab_with_directory("/tmp");
+
 
     //
     // File Container Area — using notebook now
@@ -138,7 +173,6 @@ static void init(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(right_box), notebook);
 
     add_tab_with_directory("/home");
-    add_tab_with_directory("/tmp");
 
     //
     //  Main container
@@ -248,29 +282,45 @@ void go_up_a_directory() {
  *
  * @param path The directory path to load in the new tab
  */
-
 void add_tab_with_directory(const char* path) {
     // Create and allocate tab context
     TabContext *ctx = g_malloc0(sizeof(TabContext));
     ctx->current_path = g_strdup(path);
 
-    // Create file container and tab label
+    // Create file container
     ctx->scrolled_window = gtk_scrolled_window_new();
     gtk_widget_set_hexpand(ctx->scrolled_window, TRUE);
     gtk_widget_set_vexpand(ctx->scrolled_window, TRUE);
 
+    // Create tab label
     const char* tab_name = g_path_get_basename(path);
     ctx->tab_label = gtk_label_new(tab_name);
+
+    // Create custom tab header box (label + close button)
+    GtkWidget *tab_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_halign(tab_header, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(tab_header, GTK_ALIGN_CENTER);
+
+    GtkWidget *close_button = gtk_button_new_from_icon_name("window-close-symbolic");
+    gtk_widget_set_tooltip_text(close_button, "Close tab");
+    gtk_widget_set_size_request(close_button, 20, 20);
+    gtk_button_set_has_frame(GTK_BUTTON(close_button), FALSE);
+    gtk_widget_set_focusable(close_button, FALSE);
+
+    gtk_box_append(GTK_BOX(tab_header), ctx->tab_label);
+    gtk_box_append(GTK_BOX(tab_header), close_button);
 
     // Populate files into this container
     populate_files_in_container(path, ctx->scrolled_window, ctx);
 
     // Add the new tab
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), ctx->scrolled_window, ctx->tab_label);
-    gtk_widget_show(ctx->tab_label);
-    gtk_widget_show(ctx->scrolled_window);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), ctx->scrolled_window, tab_header);
+    g_object_set_data(G_OBJECT(ctx->scrolled_window), "tab_ctx", ctx);
 
-    // Switch to it
+    // Connect close button handler
+    g_signal_connect(close_button, "clicked", G_CALLBACK(on_close_tab_clicked), notebook);
+
+    // Switch to the newly added tab
     int total_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
     gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), total_pages - 1);
 }
@@ -288,6 +338,14 @@ void add_tab_with_directory(const char* path) {
  */
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx) {
+    if (ctx->current_path && strcmp(directory, ctx->current_path) != 0) {
+        // Push current path to back stack
+        ctx->back_stack = g_list_prepend(ctx->back_stack, ctx->current_path);
+        ctx->forward_stack = NULL;  // Clear forward stack
+    }
+
+    ctx->current_path = g_strdup(directory);  // Update current path (replace strdup from before)
+
     size_t file_count = 0;
     GListStore *files = get_files_in_directory(directory, &file_count);
     if (!files) return;
@@ -309,7 +367,81 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
     // Update context path + tab label
     g_free(ctx->current_path);
     ctx->current_path = g_strdup(directory);
+    gtk_editable_set_text(GTK_EDITABLE(directory_entry), directory);
     gtk_label_set_text(GTK_LABEL(ctx->tab_label), g_path_get_basename(directory));
+}
+
+/**
+ * Callback for the "+" button that opens a new tab.
+ */
+void on_add_tab_clicked(GtkButton *button, gpointer user_data) {
+    // You can use a default or home directory here
+    add_tab_with_directory("/home");
+}
+
+void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
+    GtkNotebook *notebook = GTK_NOTEBOOK(user_data);
+    int n_pages = gtk_notebook_get_n_pages(notebook);
+
+    for (int i = 0; i < n_pages; ++i) {
+        GtkWidget *page = gtk_notebook_get_nth_page(notebook, i);
+        GtkWidget *tab_header = gtk_notebook_get_tab_label(notebook, page);
+
+        if (gtk_widget_is_ancestor(GTK_WIDGET(button), tab_header)) {
+            gtk_notebook_remove_page(notebook, i);
+            break;
+        }
+    }
+}
+
+void on_back_clicked(GtkButton *button, gpointer user_data) {
+    int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
+    if (page < 0) return;
+
+    GtkWidget *container = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
+    GtkWidget *tab_label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(notebook), container);
+    TabContext *ctx = NULL;
+
+    // Try to find the right TabContext
+    for (int i = 0; i < gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook)); i++) {
+        GtkWidget *pg = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), i);
+        if (pg == container) {
+            // crude lookup: we assume ctx is associated with container memory-wise
+            ctx = g_object_get_data(G_OBJECT(pg), "tab_ctx");
+            break;
+        }
+    }
+
+    if (ctx && ctx->back_stack) {
+        char *prev_path = ctx->back_stack->data;
+        ctx->back_stack = g_list_delete_link(ctx->back_stack, ctx->back_stack);
+        ctx->forward_stack = g_list_prepend(ctx->forward_stack, g_strdup(ctx->current_path));
+        populate_files_in_container(prev_path, ctx->scrolled_window, ctx);
+    }
+}
+
+void on_forward_clicked(GtkButton *button, gpointer user_data) {
+    int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
+    if (page < 0) return;
+
+    GtkWidget *container = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
+    GtkWidget *tab_label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(notebook), container);
+    TabContext *ctx = NULL;
+
+    for (int i = 0; i < gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook)); i++) {
+        GtkWidget *pg = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), i);
+        if (pg == container) {
+            ctx = g_object_get_data(G_OBJECT(pg), "tab_ctx");
+            break;
+        }
+    }
+
+    if (ctx && ctx->forward_stack) {
+        char *next_path = ctx->forward_stack->data;
+        ctx->forward_stack = g_list_delete_link(ctx->forward_stack, ctx->forward_stack);
+        ctx->back_stack = g_list_prepend(ctx->back_stack, g_strdup(ctx->current_path));
+        populate_files_in_container(next_path, ctx->scrolled_window, ctx);
+    }
 }
 
 int main(int argc, char **argv) {
