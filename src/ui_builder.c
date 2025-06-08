@@ -1,5 +1,6 @@
 #include "ui_builder.h"
 #include "utils.h"
+#include "main.h"
 #include <stdlib.h>
 
 /**
@@ -123,8 +124,6 @@ void setup_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
  * @param list_item
  */
 void bind_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
-    // This should populate any subsequent directories after clicking one
-    // but the directories aren't clickable right now
     GFileInfo *file_info = G_FILE_INFO(gtk_list_item_get_item(list_item));
     const char *filename = g_file_info_get_name(file_info);
 
@@ -133,35 +132,128 @@ void bind_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
+ * This is responsible for creating additional rows when unfolding directories
+ * @param file
+ * @return
+ */
+static GtkWidget* create_directory_row(GFile *file) {
+    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+
+    GtkWidget *label = gtk_label_new(g_file_get_basename(file));
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_widget_set_hexpand(label, TRUE);
+
+    gtk_box_append(GTK_BOX(header), label);
+    gtk_box_append(GTK_BOX(row_box), header);
+
+    // Attach gesture for click handling
+    GtkGesture *click = gtk_gesture_click_new();
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_PRIMARY);
+    g_signal_connect(click, "pressed", G_CALLBACK(on_directory_row_clicked), row_box);
+    gtk_widget_add_controller(header, GTK_EVENT_CONTROLLER(click));
+
+    // Store the file as data for later expansion
+    g_object_set_data_full(G_OBJECT(row_box), "file", g_object_ref(file), g_object_unref);
+
+    return row_box;
+}
+
+/**
+ * Handles the sidebar directories being clicked
+ * @param gesture
+ * @param n_press
+ * @param x
+ * @param y
+ * @param user_data
+ */
+static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
+    GtkWidget *row_box = GTK_WIDGET(user_data);
+
+    GtkWidget *existing_list = g_object_get_data(G_OBJECT(row_box), "child-list");
+    if (existing_list) {
+        gtk_widget_unparent(existing_list);
+        g_object_set_data(G_OBJECT(row_box), "child-list", NULL);
+        return;
+    }
+
+    GFile *dir = g_object_get_data(G_OBJECT(row_box), "file");
+    if (!dir) return;
+
+    GError *error = NULL;
+    GFileEnumerator *enumerator = g_file_enumerate_children(dir, "standard::name,standard::type", G_FILE_QUERY_INFO_NONE, NULL, &error);
+    if (!enumerator) {
+        g_warning("Failed to enumerate directory: %s", error->message);
+        g_error_free(error);
+        return;
+    }
+
+    GtkWidget *child_list = gtk_list_box_new();
+    gtk_widget_set_margin_start(child_list, 10);
+
+    GFileInfo *info;
+    while ((info = g_file_enumerator_next_file(enumerator, NULL, NULL)) != NULL) {
+        if (g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY) {
+            GFile *child_file = g_file_get_child(dir, g_file_info_get_name(info));
+            GtkWidget *child_row = create_directory_row(child_file);
+            gtk_list_box_append(GTK_LIST_BOX(child_list), child_row);
+            g_object_unref(child_file);
+            g_object_unref(info);
+        }
+    }
+
+    // GFile *clicked_dir = g_object_get_data(G_OBJECT(user_data), "file");
+    // char *path = g_file_get_path(clicked_dir);
+    // populate_files(path);
+    // g_free(path);
+
+    g_object_unref(enumerator);
+
+    gtk_box_append(GTK_BOX(row_box), child_list);
+    g_object_set_data(G_OBJECT(row_box), "child-list", child_list);
+}
+
+/**
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
 GtkWidget* create_left_box() {
-    // Create the side box
-    GtkWidget* side_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
-    gtk_widget_set_size_request(side_box, 100, -1); // begs for a size for the box
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    GtkWidget *label = gtk_label_new("Directories");
+    gtk_box_append(GTK_BOX(box), label);
 
-    // Add a label to the side box
-    GtkWidget* label = gtk_label_new("Directories");
-    gtk_box_append(GTK_BOX(side_box), label);
+    GtkWidget *list = gtk_list_box_new();
+    gtk_box_append(GTK_BOX(box), list);
 
-    GFile *root_file = g_file_new_for_path("/");
-    GtkDirectoryList *dir_list = gtk_directory_list_new(".", root_file);
+    GFile *root = g_file_new_for_path("/");
 
-    GtkSingleSelection *selection = gtk_single_selection_new(G_LIST_MODEL(dir_list));
-    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+    GError *error = NULL;
+    GFileEnumerator *enumerator = g_file_enumerate_children(root, "standard::name,standard::type", G_FILE_QUERY_INFO_NONE, NULL, &error);
+    if (!enumerator) {
+        g_warning("Failed to enumerate root: %s", error->message);
+        g_error_free(error);
+        return box;
+    }
 
-    g_signal_connect(factory, "setup", G_CALLBACK(setup_dir_item), NULL);
-    g_signal_connect(factory, "bind", G_CALLBACK(bind_dir_item), NULL);
+    GFileInfo *info;
+    while ((info = g_file_enumerator_next_file(enumerator, NULL, NULL)) != NULL) {
+        if (g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY) {
+            GFile *child = g_file_get_child(root, g_file_info_get_name(info));
+            GtkWidget *row = create_directory_row(child);
+            gtk_list_box_append(GTK_LIST_BOX(list), row);
+            g_object_unref(child);
+            g_object_unref(info);
+        }
+    }
 
-    GtkWidget* list_view = gtk_list_view_new(GTK_SELECTION_MODEL(selection), factory);
+    g_object_unref(enumerator);
+    g_object_unref(root);
 
-    gtk_list_box_append(GTK_LIST_BOX(list_view), GTK_WIDGET(dir_list));
-    gtk_box_append(GTK_BOX(side_box), list_view);
-
-
-    return side_box;
+    return box;
 }
+
+
 
 /**
  * Creates a toolbar with navigation controls

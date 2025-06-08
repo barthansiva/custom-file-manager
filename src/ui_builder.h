@@ -40,6 +40,10 @@ typedef struct {
     GtkWidget* search_entry;
 } Toolbar;
 
+// Logic for the collapsable directory structures
+static GtkWidget* create_directory_row(GFile *file);
+static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+
 /**
  * Creates the toolbar widget structure with up button, directory entry and search entry
  * @param default_directory The default directory to display in the entry
