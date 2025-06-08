@@ -5,6 +5,8 @@
 
 GtkWidget *main_file_container;
 GtkWidget *directory_entry;
+GtkWidget *notebook;
+
 const char *default_directory = "/home"; // Default directory to start in
 char *current_directory = NULL;
 
@@ -14,6 +16,16 @@ void file_clicked(GtkGridView *view, guint position, gpointer user_data);
 void directory_entry_changed(  GtkEntry* self, gpointer user_data);
 
 void go_up_a_directory();
+
+void add_tab_with_directory(const char* path);
+
+typedef struct {
+    GtkWidget *scrolled_window;
+    char *current_path;
+    GtkWidget *tab_label;
+} TabContext;
+
+void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx);
 
 /**
  * Totally not AI-generated code documentation
@@ -109,14 +121,24 @@ static void init(GtkApplication *app, gpointer user_data) {
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
 
+
     //
-    // File Container
+    // Initial Tabs
+    add_tab_with_directory("/home");
+    add_tab_with_directory("/tmp");
+
     //
-    main_file_container = gtk_scrolled_window_new();
-    gtk_widget_set_vexpand(main_file_container, TRUE);
+    // File Container Area — using notebook now
+    //
+    notebook = gtk_notebook_new();
+    gtk_widget_set_hexpand(notebook, TRUE);
+    gtk_widget_set_vexpand(notebook, TRUE);
 
     gtk_box_append(GTK_BOX(right_box), toolbar.toolbar);
-    gtk_box_append(GTK_BOX(right_box), main_file_container);
+    gtk_box_append(GTK_BOX(right_box), notebook);
+
+    add_tab_with_directory("/home");
+    add_tab_with_directory("/tmp");
 
     //
     //  Main container
@@ -140,25 +162,34 @@ static void init(GtkApplication *app, gpointer user_data) {
 
 
 /**
- * Callback function for when a file is double-clicked in the grid view
- * @param view The GtkGridView that was clicked
- * @param position The position of the clicked item
- * @param user_data User data passed to the callback (in this case, the GListStore of files)
+ * Callback function for when a file is double-clicked in the grid view.
+ * If the selected file is a directory, the tab's content is replaced with the new directory listing.
+ *
+ * This function works per-tab using the TabContext passed as user_data.
+ *
+ * @param view The GtkGridView that was activated
+ * @param position The index of the item in the grid that was clicked
+ * @param user_data Pointer to the TabContext of the current tab
  */
 void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
-    GListStore *files = G_LIST_STORE(user_data);
-    GFile *file = g_list_model_get_item(G_LIST_MODEL(files), position);
+    TabContext *ctx = (TabContext *)user_data;
 
+    GtkSelectionModel *model = gtk_grid_view_get_model(view);
+    GListStore *files = G_LIST_STORE(gtk_multi_selection_get_model(GTK_MULTI_SELECTION(model)));
+
+    GFile *file = g_list_model_get_item(G_LIST_MODEL(files), position);
     GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileType type = g_file_info_get_file_type(info);
 
     if (type == G_FILE_TYPE_DIRECTORY) {
-        // If it's a directory, populate the file container with its contents
-        populate_files(g_file_get_path(file));
+        const char *path = g_file_get_path(file);
+        populate_files_in_container(path, ctx->scrolled_window, ctx);
     } else {
-        // Print info for now
         g_print("File %s clicked\n", g_file_get_basename(file));
     }
+
+    g_object_unref(file);
+    g_object_unref(info);
 }
 
 /**
@@ -207,6 +238,78 @@ void go_up_a_directory() {
     }
 
     g_object_unref(current);
+}
+
+/**
+ * Adds a new tab to the notebook, showing the contents of the specified directory.
+ * Each tab holds its own GtkScrolledWindow and tracks its state with a TabContext.
+ *
+ * Automatically switches to the newly created tab and sets the tab label to the basename of the path.
+ *
+ * @param path The directory path to load in the new tab
+ */
+
+void add_tab_with_directory(const char* path) {
+    // Create and allocate tab context
+    TabContext *ctx = g_malloc0(sizeof(TabContext));
+    ctx->current_path = g_strdup(path);
+
+    // Create file container and tab label
+    ctx->scrolled_window = gtk_scrolled_window_new();
+    gtk_widget_set_hexpand(ctx->scrolled_window, TRUE);
+    gtk_widget_set_vexpand(ctx->scrolled_window, TRUE);
+
+    const char* tab_name = g_path_get_basename(path);
+    ctx->tab_label = gtk_label_new(tab_name);
+
+    // Populate files into this container
+    populate_files_in_container(path, ctx->scrolled_window, ctx);
+
+    // Add the new tab
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), ctx->scrolled_window, ctx->tab_label);
+    gtk_widget_show(ctx->tab_label);
+    gtk_widget_show(ctx->scrolled_window);
+
+    // Switch to it
+    int total_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
+    gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), total_pages - 1);
+}
+
+/**
+ * Populates a given scrolled window container with file views from a directory,
+ * using a given TabContext to track the view state and label title.
+ *
+ * This function sets up the file grid, handles file icons, and sets the activate signal.
+ * It replaces the content inside the container with a new grid view of the files.
+ *
+ * @param directory The full path to the directory to load
+ * @param container The GtkScrolledWindow to place the file grid inside
+ * @param ctx Pointer to the TabContext for this tab (holds the label and current path)
+ */
+
+void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx) {
+    size_t file_count = 0;
+    GListStore *files = get_files_in_directory(directory, &file_count);
+    if (!files) return;
+
+    GtkMultiSelection *selection = gtk_multi_selection_new(G_LIST_MODEL(files));
+    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_file_item), NULL);
+    g_signal_connect(factory, "bind", G_CALLBACK(bind_file_item), NULL);
+
+    GtkWidget *view = gtk_grid_view_new(GTK_SELECTION_MODEL(selection), factory);
+    gtk_grid_view_set_single_click_activate(GTK_GRID_VIEW(view), FALSE);
+
+    // Important: Set file click handler
+    g_signal_connect(view, "activate", G_CALLBACK(file_clicked), ctx);
+
+    // Swap in the new view
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(container), view);
+
+    // Update context path + tab label
+    g_free(ctx->current_path);
+    ctx->current_path = g_strdup(directory);
+    gtk_label_set_text(GTK_LABEL(ctx->tab_label), g_path_get_basename(directory));
 }
 
 int main(int argc, char **argv) {
