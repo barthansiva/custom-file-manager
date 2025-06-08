@@ -1,8 +1,8 @@
 #ifndef UI_BUILDER_H
 #define UI_BUILDER_H
+#define SPACING 7
 
 #include <gtk/gtk.h>
-#include "utils.h"
 
 /**
  * Sets up a list item factory for displaying files in a list.
@@ -28,6 +28,23 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item);
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
-GtkWidget* create_side_box(void);
+GtkWidget* create_left_box();
+
+/**
+ * Struct to hold the toolbar widgets
+ */
+typedef struct {
+    GtkWidget* toolbar;
+    GtkWidget* up_button;
+    GtkWidget* directory_entry;
+    GtkWidget* search_entry;
+} Toolbar;
+
+/**
+ * Creates the toolbar widget structure with up button, directory entry and search entry
+ * @param default_directory The default directory to display in the entry
+ * @return A struct containing the toolbar widgets
+ */
+Toolbar create_toolbar(const char* default_directory);
 
 #endif //UI_BUILDER_H

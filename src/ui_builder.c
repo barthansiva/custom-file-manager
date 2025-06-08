@@ -31,7 +31,8 @@ static void on_file_info_ready(GObject *source_object, GAsyncResult *res, gpoint
  */
 void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
+
     gtk_widget_set_focusable(box, TRUE);
 
     //
@@ -88,7 +89,7 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
     // Update the label
     gtk_label_set_text(GTK_LABEL(label), g_file_get_basename(file));
-    gtk_image_set_pixel_size(GTK_IMAGE(icon), 56);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 100);
 
     // Get file icon asynchronously
     g_file_query_info_async(file,
@@ -104,9 +105,9 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
-GtkWidget* create_side_box(void) {
+GtkWidget* create_left_box() {
     // Create the side box
-    GtkWidget* side_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    GtkWidget* side_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
     gtk_widget_set_size_request(side_box, 100, -1); // Set a fixed width for the side box
 
     // Add a label to the side box
@@ -119,4 +120,57 @@ GtkWidget* create_side_box(void) {
     gtk_box_append(GTK_BOX(side_box), flow_box);
 
     return side_box;
+}
+
+/**
+ * Creates a toolbar with navigation controls
+ * @param default_directory Initial directory to display
+ * @return Toolbar struct containing all toolbar widgets
+ */
+Toolbar create_toolbar(const char* default_directory) {
+    Toolbar toolbar;
+
+    // Create the toolbar container
+    toolbar.toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING);
+
+    // Create the "Up" button
+    toolbar.up_button = gtk_button_new_from_icon_name("go-up-symbolic");
+
+    // Create the directory entry
+    toolbar.directory_entry = gtk_entry_new();
+    gtk_widget_set_hexpand(toolbar.directory_entry, TRUE);
+
+    if (default_directory) {
+        gtk_editable_set_text(GTK_EDITABLE(toolbar.directory_entry), default_directory);
+    }
+
+    gtk_entry_set_icon_from_gicon(GTK_ENTRY(toolbar.directory_entry),
+                                  GTK_ENTRY_ICON_PRIMARY,
+                                  g_themed_icon_new("folder-symbolic"));
+    gtk_entry_set_icon_activatable(GTK_ENTRY(toolbar.directory_entry),
+                                   GTK_ENTRY_ICON_PRIMARY,
+                                   FALSE);
+    gtk_entry_set_icon_tooltip_text(GTK_ENTRY(toolbar.directory_entry),
+                                   GTK_ENTRY_ICON_PRIMARY,
+                                   "Current Directory");
+
+    gtk_entry_set_icon_from_gicon(GTK_ENTRY(toolbar.directory_entry),
+                              GTK_ENTRY_ICON_SECONDARY,
+                              g_themed_icon_new("checkmark-symbolic"));
+    gtk_entry_set_icon_activatable(GTK_ENTRY(toolbar.directory_entry),
+                                   GTK_ENTRY_ICON_SECONDARY,
+                                   TRUE);
+    gtk_entry_set_icon_tooltip_text(GTK_ENTRY(toolbar.directory_entry),
+                                   GTK_ENTRY_ICON_SECONDARY,
+                                   "Go to Directory");
+
+    // Create the search entry
+    toolbar.search_entry = gtk_search_entry_new();
+
+    // Add widgets to toolbar
+    gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.up_button);
+    gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.directory_entry);
+    gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.search_entry);
+
+    return toolbar;
 }
