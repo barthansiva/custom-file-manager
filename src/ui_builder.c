@@ -67,6 +67,8 @@ void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     gtk_list_item_set_child(list_item, box);
 }
 
+
+
 /**
  * Binds data to a list item factory for displaying files in a list.
  * This function is called when the factory is used to create a list item.
@@ -102,22 +104,61 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
+ * Bints Bogos
+ * @param factory
+ * @param list_item
+ */
+void setup_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
+    // This should set up the, well, directories in the sidebar
+    GtkWidget *label = gtk_label_new(NULL);
+    gtk_list_item_set_child(list_item, label);
+
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+}
+
+/**
+ * Binds binted Bogos
+ * @param factory
+ * @param list_item
+ */
+void bind_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
+    // This should populate any subsequent directories after clicking one
+    // but the directories aren't clickable right now
+    GFileInfo *file_info = G_FILE_INFO(gtk_list_item_get_item(list_item));
+    const char *filename = g_file_info_get_name(file_info);
+
+    GtkWidget *label = gtk_list_item_get_child(list_item);
+    gtk_label_set_text(GTK_LABEL(label), filename);
+}
+
+/**
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
 GtkWidget* create_left_box() {
     // Create the side box
     GtkWidget* side_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
-    gtk_widget_set_size_request(side_box, 100, -1); // Set a fixed width for the side box
+    gtk_widget_set_size_request(side_box, 100, -1); // begs for a size for the box
 
     // Add a label to the side box
-    GtkWidget* label = gtk_label_new("Side Panel");
+    GtkWidget* label = gtk_label_new("Directories");
     gtk_box_append(GTK_BOX(side_box), label);
 
-    // Add a flow box to the side box (for future use)
-    GtkWidget* flow_box = gtk_flow_box_new();
-    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(flow_box), GTK_SELECTION_NONE);
-    gtk_box_append(GTK_BOX(side_box), flow_box);
+    GFile *root_file = g_file_new_for_path("/");
+    GtkDirectoryList *dir_list = gtk_directory_list_new(".", root_file);
+
+    GtkSingleSelection *selection = gtk_single_selection_new(G_LIST_MODEL(dir_list));
+    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_dir_item), NULL);
+    g_signal_connect(factory, "bind", G_CALLBACK(bind_dir_item), NULL);
+
+    GtkWidget* list_view = gtk_list_view_new(GTK_SELECTION_MODEL(selection), factory);
+
+    gtk_list_box_append(GTK_LIST_BOX(list_view), GTK_WIDGET(dir_list));
+    gtk_box_append(GTK_BOX(side_box), list_view);
+
 
     return side_box;
 }
