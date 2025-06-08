@@ -8,14 +8,23 @@ GtkWidget *directory_entry;
 GtkWidget *notebook;
 
 const char *default_directory = "/home"; // Default directory to start in
-char *current_directory = NULL;
+
+// Struct declarations
+typedef struct {
+    GtkWidget *scrolled_window;
+    GtkWidget *tab_label;
+    char *current_directory;
+
+    GList *back_stack;
+    GList *forward_stack;
+} TabContext;
 
 // Function declarations
 void file_clicked(GtkGridView *view, guint position, gpointer user_data);
 
 void directory_entry_changed(  GtkEntry* self, gpointer user_data);
 
-void go_up_a_directory();
+void on_up_clicked();
 
 void on_close_tab_clicked(GtkButton *button, gpointer user_data);
 
@@ -25,74 +34,11 @@ void on_forward_clicked(GtkButton *button, gpointer user_data);
 
 void add_tab_with_directory(const char* path);
 
-typedef struct {
-    GtkWidget *scrolled_window;
-    GtkWidget *tab_label;
-    char *current_path;
-
-    GList *back_stack;
-    GList *forward_stack;
-} TabContext;
+TabContext* get_current_tab_context();
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx);
 
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
-
-/**
- * Totally not AI-generated code documentation
- * Populates the file_container with widgets for files in the specified directory
- * @param directory Path to the directory to display
- * @return TRUE if successful, FALSE otherwise
- */
-gboolean populate_files(const char *directory) {
-    if (current_directory != NULL) {
-        free(current_directory);
-    }
-
-    current_directory = strdup(directory);
-
-    // Read all files in the specified directory
-    size_t file_count = 0; //The file count in case we need it later
-    GListStore *files = get_files_in_directory(directory, &file_count);
-
-    if (files == NULL) {
-        g_print("No files found in directory: %s\n", directory);
-        return FALSE; // No files found
-    }
-
-    GtkMultiSelection *selection = gtk_multi_selection_new(G_LIST_MODEL(files));
-    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
-    g_signal_connect(factory, "setup", G_CALLBACK(setup_file_item), NULL);
-    g_signal_connect(factory, "bind", G_CALLBACK(bind_file_item), NULL);
-
-    // Get rid of the old view if it exists
-    GtkWidget *old_view = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(main_file_container));
-    if (old_view) {
-        // Disconnect the signal handler for the old view
-        g_signal_handlers_disconnect_matched(old_view, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, G_CALLBACK(file_clicked), NULL);
-
-        g_object_ref(old_view); // Apparently we need to hold a reference to it before unparenting
-        gtk_widget_unparent(old_view);
-    }
-
-    // Create new view
-    GtkWidget *view = gtk_grid_view_new(GTK_SELECTION_MODEL(selection), factory);
-    gtk_grid_view_set_single_click_activate(GTK_GRID_VIEW(view), FALSE);
-    g_signal_connect(view, "activate", G_CALLBACK(file_clicked), files);
-
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(main_file_container), view);
-
-    // Now it's safe to release our reference to the old view if we had one
-    if (old_view) {
-        g_object_unref(old_view);
-    }
-    g_object_unref(factory);
-
-    // Update the directory entry
-    gtk_editable_set_text(GTK_EDITABLE(directory_entry), current_directory);
-
-    return TRUE;
-}
 
 /**
  * Builds the core widget structure of the application
@@ -152,14 +98,14 @@ static void init(GtkApplication *app, gpointer user_data) {
 
 
     // Connect signals
-    g_signal_connect(toolbar.up_button, "clicked", G_CALLBACK(go_up_a_directory), NULL);
+    g_signal_connect(toolbar.up_button, "clicked", G_CALLBACK(on_up_clicked), NULL);
 
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
 
     //
     // Initial Tabs
-    add_tab_with_directory("/home");
+   // add_tab_with_directory(default_directory);
 
 
     //
@@ -172,7 +118,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(right_box), toolbar.toolbar);
     gtk_box_append(GTK_BOX(right_box), notebook);
 
-    add_tab_with_directory("/home");
+    add_tab_with_directory(default_directory);
 
     //
     //  Main container
@@ -191,7 +137,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Show the window
     gtk_window_present(GTK_WINDOW(window));
 
-    populate_files(default_directory);
+   // populate_files(default_directory);
 }
 
 
@@ -233,28 +179,31 @@ void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
  */
 void directory_entry_changed(  GtkEntry* self, gpointer user_data) {
     const char *new_directory = gtk_editable_get_text(GTK_EDITABLE(self));
-    if (new_directory != NULL && strlen(new_directory) != 0 && strcmp(new_directory, current_directory) != 0) {
+    TabContext* ctx = get_current_tab_context();
+    if (new_directory != NULL && strlen(new_directory) != 0 && strcmp(new_directory, ctx->current_directory) != 0) {
             const GFile *file = g_file_new_for_path(new_directory);
             if (file) {
-                populate_files(new_directory);
+                populate_files_in_container(new_directory, ctx->scrolled_window, ctx);
             } else {
-                gtk_editable_set_text(GTK_EDITABLE(directory_entry), current_directory);
+                gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
             }
             g_object_unref(G_OBJECT(file));
-            g_print("Directory entry changed to: %s\n", new_directory);
     }
 }
 
 /**
  * Function to go up one directory level
  */
-void go_up_a_directory() {
-    if (current_directory == NULL) {
+void on_up_clicked() {
+
+    TabContext* ctx = get_current_tab_context();
+
+    if (ctx->current_directory == NULL) {
         return;
     }
 
     // Create a GFile from the current directory
-    GFile *current = g_file_new_for_path(current_directory);
+    GFile *current = g_file_new_for_path(ctx->current_directory);
 
     // Get the parent directory
     GFile *parent = g_file_get_parent(current);
@@ -264,7 +213,7 @@ void go_up_a_directory() {
         const char *parent_path = g_file_get_path(parent);
 
         // Populate files with the parent directory
-        populate_files(parent_path);
+        populate_files_in_container(parent_path, ctx->scrolled_window, ctx);
 
         // Free resources
         // g_free(parent_path);
@@ -285,7 +234,7 @@ void go_up_a_directory() {
 void add_tab_with_directory(const char* path) {
     // Create and allocate tab context
     TabContext *ctx = g_malloc0(sizeof(TabContext));
-    ctx->current_path = g_strdup(path);
+    ctx->current_directory = g_strdup(path);
 
     // Create file container
     ctx->scrolled_window = gtk_scrolled_window_new();
@@ -338,13 +287,13 @@ void add_tab_with_directory(const char* path) {
  */
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx) {
-    if (ctx->current_path && strcmp(directory, ctx->current_path) != 0) {
+    if (ctx->current_directory && strcmp(directory, ctx->current_directory) != 0) {
         // Push current path to back stack
-        ctx->back_stack = g_list_prepend(ctx->back_stack, ctx->current_path);
+        ctx->back_stack = g_list_prepend(ctx->back_stack, ctx->current_directory);
         ctx->forward_stack = NULL;  // Clear forward stack
     }
 
-    ctx->current_path = g_strdup(directory);  // Update current path (replace strdup from before)
+    ctx->current_directory = g_strdup(directory);  // Update current path (replace strdup from before)
 
     size_t file_count = 0;
     GListStore *files = get_files_in_directory(directory, &file_count);
@@ -365,20 +314,31 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(container), view);
 
     // Update context path + tab label
-    g_free(ctx->current_path);
-    ctx->current_path = g_strdup(directory);
-    gtk_editable_set_text(GTK_EDITABLE(directory_entry), directory);
+    g_free(ctx->current_directory);
+    ctx->current_directory = g_strdup(directory);
+    gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
     gtk_label_set_text(GTK_LABEL(ctx->tab_label), g_path_get_basename(directory));
 }
 
 /**
- * Callback for the "+" button that opens a new tab.
+ * Callback for the "Add Tab" button.
+ * It creates a new tab with the default directory.
+ *
+ * @param button The GtkButton that was clicked
+ * @param user_data Not used here, but can be used to pass additional data
  */
 void on_add_tab_clicked(GtkButton *button, gpointer user_data) {
     // You can use a default or home directory here
-    add_tab_with_directory("/home");
+    add_tab_with_directory(default_directory);
 }
 
+/**
+ * Callback for the close button on a tab.
+ * It finds the tab that contains the button and removes it from the notebook.
+ *
+ * @param button The GtkButton that was clicked
+ * @param user_data The GtkNotebook containing the tabs
+ */
 void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
     GtkNotebook *notebook = GTK_NOTEBOOK(user_data);
     int n_pages = gtk_notebook_get_n_pages(notebook);
@@ -394,12 +354,56 @@ void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
     }
 }
 
+/**
+ * Callback for the back button.
+ * It navigates to the previous directory in the back stack, if available.
+ *
+ * @param button The GtkButton that was clicked
+ * @param user_data Not used here, but can be used to pass additional data
+ */
 void on_back_clicked(GtkButton *button, gpointer user_data) {
+
+    TabContext* ctx = get_current_tab_context();
+
+    if (ctx && ctx->back_stack) {
+        char *prev_path = ctx->back_stack->data;
+        ctx->back_stack = g_list_delete_link(ctx->back_stack, ctx->back_stack);
+        ctx->forward_stack = g_list_prepend(ctx->forward_stack, g_strdup(ctx->current_directory));
+        populate_files_in_container(prev_path, ctx->scrolled_window, ctx);
+    }
+}
+
+/**
+ * Callback for the forward button.
+ * It navigates to the next directory in the forward stack, if available.
+ *
+ * @param button The GtkButton that was clicked
+ * @param user_data Not used here, but can be used to pass additional data
+ */
+void on_forward_clicked(GtkButton *button, gpointer user_data) {
+
+    TabContext* ctx = get_current_tab_context();
+
+    if (ctx && ctx->forward_stack) {
+        char *next_path = ctx->forward_stack->data;
+        ctx->forward_stack = g_list_delete_link(ctx->forward_stack, ctx->forward_stack);
+        ctx->back_stack = g_list_prepend(ctx->back_stack, g_strdup(ctx->current_directory));
+        populate_files_in_container(next_path, ctx->scrolled_window, ctx);
+    }
+}
+
+/**
+ * Gets the current TabContext based on the currently active tab in the notebook.
+ * This function assumes that each tab's content is a GtkScrolledWindow with a TabContext stored in its user data.
+ *
+ * @return Pointer to the current TabContext, or NULL if no tab is active.
+ */
+TabContext* get_current_tab_context() {
+
     int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
-    if (page < 0) return;
+    if (page < 0) return NULL;
 
     GtkWidget *container = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
-    GtkWidget *tab_label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(notebook), container);
     TabContext *ctx = NULL;
 
     // Try to find the right TabContext
@@ -411,37 +415,7 @@ void on_back_clicked(GtkButton *button, gpointer user_data) {
             break;
         }
     }
-
-    if (ctx && ctx->back_stack) {
-        char *prev_path = ctx->back_stack->data;
-        ctx->back_stack = g_list_delete_link(ctx->back_stack, ctx->back_stack);
-        ctx->forward_stack = g_list_prepend(ctx->forward_stack, g_strdup(ctx->current_path));
-        populate_files_in_container(prev_path, ctx->scrolled_window, ctx);
-    }
-}
-
-void on_forward_clicked(GtkButton *button, gpointer user_data) {
-    int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
-    if (page < 0) return;
-
-    GtkWidget *container = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
-    GtkWidget *tab_label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(notebook), container);
-    TabContext *ctx = NULL;
-
-    for (int i = 0; i < gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook)); i++) {
-        GtkWidget *pg = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), i);
-        if (pg == container) {
-            ctx = g_object_get_data(G_OBJECT(pg), "tab_ctx");
-            break;
-        }
-    }
-
-    if (ctx && ctx->forward_stack) {
-        char *next_path = ctx->forward_stack->data;
-        ctx->forward_stack = g_list_delete_link(ctx->forward_stack, ctx->forward_stack);
-        ctx->back_stack = g_list_prepend(ctx->back_stack, g_strdup(ctx->current_path));
-        populate_files_in_container(next_path, ctx->scrolled_window, ctx);
-    }
+    return ctx;
 }
 
 int main(int argc, char **argv) {

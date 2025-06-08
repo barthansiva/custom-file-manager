@@ -105,7 +105,7 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
- * Bints Bogos
+ * Bints Bogos (amazing comments btw)
  * @param factory
  * @param list_item
  */
