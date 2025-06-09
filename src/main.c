@@ -21,6 +21,7 @@ void on_up_clicked();
 
 void on_close_tab_clicked(GtkButton *button, gpointer user_data);
 
+
 void add_tab_with_directory(const char* path);
 
 void update_preview_text(TabContext *ctx, GFile *file);
@@ -30,6 +31,8 @@ TabContext* get_current_tab_context();
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
 
 void search_entry_changed(GtkEditable *editable, gpointer user_data);
+
+void tab_changed(GtkNotebook* self, GtkWidget* page, guint page_num, gpointer user_data);
 
 /**
  * Builds the core widget structure of the application
@@ -72,6 +75,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     // Tabs
     //
+
     GtkWidget *add_tab_button = gtk_button_new_from_icon_name("tab-new-symbolic");
     gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
     gtk_box_append(GTK_BOX(toolbar.toolbar), add_tab_button);
@@ -89,6 +93,8 @@ static void init(GtkApplication *app, gpointer user_data) {
     // File Container Area — using notebook now
     //
     notebook = gtk_notebook_new();
+    gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), FALSE);
+    g_signal_connect(notebook, "switch-page", G_CALLBACK(tab_changed), NULL);
     gtk_widget_set_hexpand(notebook, TRUE);
     gtk_widget_set_vexpand(notebook, TRUE);
 
@@ -128,7 +134,7 @@ static void init(GtkApplication *app, gpointer user_data) {
  * @param position The index of the item in the grid that was clicked
  * @param user_data Pointer to the TabContext of the current tab
  */
-void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
+void file_clicked(GtkGridView *view, const guint position, const gpointer user_data) {
     TabContext *ctx = (TabContext *)user_data;
 
     GtkSelectionModel *model = gtk_grid_view_get_model(view);
@@ -167,7 +173,7 @@ void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
  * @param self The GtkEntry that was changed
  * @param user_data User data passed to the callback (not used here)
  */
-void directory_entry_changed(  GtkEntry* self, gpointer user_data) {
+void directory_entry_changed(GtkEntry* self, gpointer user_data) {
     const char *new_directory = gtk_editable_get_text(GTK_EDITABLE(self));
     TabContext* ctx = get_current_tab_context();
     if (strcmp(new_directory,"play/snake") == 0) {
@@ -188,13 +194,22 @@ void directory_entry_changed(  GtkEntry* self, gpointer user_data) {
  * Function to go up one directory level
  */
 void on_up_clicked() {
+
     TabContext* ctx = get_current_tab_context();
     if (!ctx || !ctx->current_directory) return;
 
+    if (ctx->current_directory == NULL) {
+        return;
+    }
+
+    // Create a GFile from the current directory
     GFile *current = g_file_new_for_path(ctx->current_directory);
+
+    // Get the parent directory
     GFile *parent = g_file_get_parent(current);
 
     if (parent != NULL) {
+        // Get the path of the parent directory
         const char *parent_path = g_file_get_path(parent);
         if (parent_path) {
             populate_files_in_container(parent_path, ctx->scrolled_window, ctx);
@@ -251,7 +266,7 @@ void add_tab_with_directory(const char* path) {
     const char* tab_name = g_path_get_basename(path);
     ctx->tab_label = gtk_label_new(tab_name);
 
-    GtkWidget *tab_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *tab_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING);
     gtk_widget_set_halign(tab_header, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(tab_header, GTK_ALIGN_CENTER);
 
@@ -421,6 +436,15 @@ void populate_files_with_filter(const char *filter) {
 void search_entry_changed(GtkEditable *editable, gpointer user_data) {
     const char *query = gtk_editable_get_text(editable);
     populate_files_with_filter(query);
+}
+
+void tab_changed(GtkNotebook* self, GtkWidget* page, const guint page_num, gpointer user_data) {
+    const TabContext* ctx = g_object_get_data(G_OBJECT(page), "tab_ctx");
+    if (ctx) {
+        gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
+    } else {
+        gtk_editable_set_text(GTK_EDITABLE(directory_entry), default_directory);
+    }
 }
 
 void update_preview_text(TabContext *ctx, GFile *file) {
