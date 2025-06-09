@@ -3,6 +3,7 @@
 #define SPACING 7
 
 #include <gtk/gtk.h>
+#include "main.h"
 
 /**
  * Sets up a list item factory for displaying files in a list.
@@ -43,6 +44,8 @@ typedef struct {
 // Logic for the collapsable directory structures
 static GtkWidget* create_directory_row(GFile *file);
 static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+
+void set_context(TabContext* ctx);
 
 /**
  * Creates the toolbar widget structure with up button, directory entry and search entry

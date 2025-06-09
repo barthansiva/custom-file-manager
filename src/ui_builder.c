@@ -203,10 +203,11 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
         }
     }
 
-    // GFile *clicked_dir = g_object_get_data(G_OBJECT(user_data), "file");
-    // char *path = g_file_get_path(clicked_dir);
-    // populate_files(path);
-    // g_free(path);
+    GFile *clicked_dir = g_object_get_data(G_OBJECT(user_data), "file");
+    char *path = g_file_get_path(clicked_dir);
+    TabContext* ctx = get_current_tab_context();
+    populate_files_in_container(path, ctx->scrolled_window, ctx);
+    g_free(path);
 
     g_object_unref(enumerator);
 
@@ -219,12 +220,17 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
  * @return GtkWidget* containing the side panel
  */
 GtkWidget* create_left_box() {
+
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     GtkWidget *label = gtk_label_new("Directories");
     gtk_box_append(GTK_BOX(box), label);
 
+    GtkWidget *sw = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(sw, TRUE);
+    gtk_box_append(GTK_BOX(box), sw);
+
     GtkWidget *list = gtk_list_box_new();
-    gtk_box_append(GTK_BOX(box), list);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
 
     GFile *root = g_file_new_for_path("/");
 

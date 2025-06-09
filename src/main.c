@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 #include "utils.h"
 #include "ui_builder.h"
+#include "main.h"
 #include <stdlib.h>
 
 GtkWidget *main_file_container;
@@ -9,12 +10,12 @@ GtkWidget *notebook;
 
 const char *default_directory = "/home"; // Default directory to start in
 
-// Struct declarations
-typedef struct {
-    GtkWidget *scrolled_window;
-    GtkWidget *tab_label;
-    char *current_directory;
-} TabContext;
+// // Struct declarations
+// typedef struct {
+//     GtkWidget *scrolled_window;
+//     GtkWidget *tab_label;
+//     char *current_directory;
+// } TabContext;
 
 // Function declarations
 void file_clicked(GtkGridView *view, guint position, gpointer user_data);
@@ -30,7 +31,7 @@ void add_tab_with_directory(const char* path);
 
 TabContext* get_current_tab_context();
 
-void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx);
+
 
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
 
