@@ -20,4 +20,6 @@ gboolean populate_files(const char *directory);
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx);
 
+void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+
 #endif //MAIN_H

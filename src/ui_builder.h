@@ -54,4 +54,6 @@ void set_context(TabContext* ctx);
  */
 Toolbar create_toolbar(const char* default_directory);
 
+GtkPopoverMenu* create_file_context_menu(const char* params);
+
 #endif //UI_BUILDER_H

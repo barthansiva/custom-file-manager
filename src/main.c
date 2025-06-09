@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "snake.h"
 
+GtkWidget *window;
 GtkWidget *main_file_container;
 GtkWidget *directory_entry;
 GtkWidget *notebook;
@@ -21,12 +22,9 @@ void on_up_clicked();
 
 void on_close_tab_clicked(GtkButton *button, gpointer user_data);
 
-
 void add_tab_with_directory(const char* path);
 
 void update_preview_text(TabContext *ctx, GFile *file);
-
-TabContext* get_current_tab_context();
 
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
 
@@ -34,15 +32,27 @@ void search_entry_changed(GtkEditable *editable, gpointer user_data);
 
 void tab_changed(GtkNotebook* self, GtkWidget* page, guint page_num, gpointer user_data);
 
+static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
+static const GActionEntry win_actions[] = {
+    { "delete", menu_delete_clicked, "s", NULL, NULL }
+};
+
 /**
  * Builds the core widget structure of the application
  * @param app The GtkApplication instance
  * @param user_data User data passed to the callback (not used here)
  */
 static void init(GtkApplication *app, gpointer user_data) {
-    GtkWidget *window = gtk_application_window_new(app);
+    // Initialize the operation history array
+    init_operation_history();
+
+    window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "File Manager"); //Really original title
     gtk_window_set_default_size(GTK_WINDOW(window), 1600, 900);
+
+    //Add actions to our window (stupid ass system, I have no idea why it exists)
+    g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), window);
 
     //
     //  Left side panel
@@ -469,6 +479,73 @@ void update_preview_text(TabContext *ctx, GFile *file) {
 
     gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), TRUE);
     g_free(path);
+}
+
+void reload_current_directory() {
+    TabContext *ctx = get_current_tab_context();
+    if (ctx && ctx->current_directory) {
+        populate_files_in_container(ctx->current_directory, ctx->scrolled_window, ctx);
+    }
+}
+
+// New function to handle right-click on file items
+void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
+
+    GtkWidget *box = GTK_WIDGET(user_data);
+
+    size_t count;
+    GtkGridView* view = GTK_GRID_VIEW(gtk_widget_get_first_child(get_current_tab_context()->scrolled_window));
+    GFile** selected_files = get_selection(view, &count);
+
+    char* params;
+    if (count == 0) {
+        GtkListItem *list_item = GTK_LIST_ITEM(g_object_get_data(G_OBJECT(box), "list-item"));
+        GFile *file = G_FILE(gtk_list_item_get_item(list_item));
+
+        params = g_file_get_path(file);
+
+        g_object_unref(file);
+    }else {
+        params = join_basenames(selected_files, count, " ");
+        g_free(selected_files);
+    }
+
+    GtkPopoverMenu* popover = create_file_context_menu(params);
+    gtk_widget_set_parent(GTK_WIDGET(popover), box);
+    const GdkRectangle rect = { gtk_widget_get_width(box)/2, gtk_widget_get_height(box), 1, 1 };
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    gtk_popover_popup(GTK_POPOVER(popover));
+
+}
+
+static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    const char *params = g_variant_get_string(parameter, NULL);
+    size_t count;
+    char** files = split_basenames(params," ", &count);
+    if (count == 1) {
+        delete_file(files[0]);
+    } else {
+        // Extract directory path from the first element
+        char *dir_path = strdup(files[0]);
+
+        // Loop through remaining files (starting from index 1)
+        for (size_t i = 1; i < count; i++) {
+            // Construct absolute path by combining directory path and filename
+            char *abs_path = g_build_filename(dir_path, files[i], NULL);
+            // Delete the file
+            delete_file(abs_path);
+
+            // Free the constructed path
+            g_free(abs_path);
+        }
+
+        // Free the directory path
+        g_free(dir_path);
+    }
+
+    // Free the split basenames array
+    g_strfreev(files);
+    reload_current_directory();
 }
 
 int main(int argc, char **argv) {

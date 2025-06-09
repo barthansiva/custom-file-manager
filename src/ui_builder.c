@@ -90,6 +90,15 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
         return;
     }
 
+    // Store list item in the box data for later retrieval in right-click handler
+    g_object_set_data(G_OBJECT(box), "list-item", list_item);
+
+    // Add right-click gesture controller
+    GtkGesture *right_click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);  // Right mouse button
+    gtk_widget_add_controller(box, GTK_EVENT_CONTROLLER(right_click));
+    g_signal_connect(right_click, "released", G_CALLBACK(file_right_clicked), box);
+
     // Update the label
     gtk_label_set_text(GTK_LABEL(label), g_file_get_basename(file));
     gtk_image_set_pixel_size(GTK_IMAGE(icon), 100);
@@ -353,4 +362,26 @@ Toolbar create_toolbar(const char* default_directory) {
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.search_entry);
 
     return toolbar;
+}
+
+GtkPopoverMenu* create_file_context_menu(const char* params) {
+    GMenu *menu = g_menu_new();
+
+    //
+    // Add items to the menu
+    //
+
+    // Delete item
+    GMenuItem *delete_item = g_menu_item_new("Delete", "win.delete");
+    g_menu_item_set_action_and_target_value(delete_item, "win.delete", g_variant_new_string(params));
+    g_menu_append_item(menu, delete_item);
+    g_object_unref(delete_item);
+
+    GMenuModel *menu_model = G_MENU_MODEL(menu);
+
+    // 2. Create the PopoverMenu from the model
+    GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
+    g_object_unref(menu);
+
+    return popover;
 }
