@@ -14,9 +14,6 @@ typedef struct {
     GtkWidget *scrolled_window;
     GtkWidget *tab_label;
     char *current_directory;
-
-    GList *back_stack;
-    GList *forward_stack;
 } TabContext;
 
 // Function declarations
@@ -28,9 +25,6 @@ void on_up_clicked();
 
 void on_close_tab_clicked(GtkButton *button, gpointer user_data);
 
-void on_back_clicked(GtkButton *button, gpointer user_data);
-
-void on_forward_clicked(GtkButton *button, gpointer user_data);
 
 void add_tab_with_directory(const char* path);
 
@@ -75,19 +69,6 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     // Tabs
     //
-    GtkWidget *back_button = gtk_button_new_from_icon_name("go-previous-symbolic");
-    gtk_widget_set_tooltip_text(back_button, "Back");
-
-    GtkWidget *forward_button = gtk_button_new_from_icon_name("go-next-symbolic");
-    gtk_widget_set_tooltip_text(forward_button, "Forward");
-
-    gtk_box_append(GTK_BOX(toolbar.toolbar), back_button);
-    gtk_box_append(GTK_BOX(toolbar.toolbar), forward_button);
-
-    // Connect signals
-    g_signal_connect(back_button, "clicked", G_CALLBACK(on_back_clicked), NULL);
-    g_signal_connect(forward_button, "clicked", G_CALLBACK(on_forward_clicked), NULL);
-
 
     GtkWidget *add_tab_button = gtk_button_new_with_label("+");
     gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
@@ -287,12 +268,6 @@ void add_tab_with_directory(const char* path) {
  */
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx) {
-    if (ctx->current_directory && strcmp(directory, ctx->current_directory) != 0) {
-        // Push current path to back stack
-        ctx->back_stack = g_list_prepend(ctx->back_stack, ctx->current_directory);
-        ctx->forward_stack = NULL;  // Clear forward stack
-    }
-
     ctx->current_directory = g_strdup(directory);  // Update current path (replace strdup from before)
 
     size_t file_count = 0;
@@ -354,43 +329,7 @@ void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
     }
 }
 
-/**
- * Callback for the back button.
- * It navigates to the previous directory in the back stack, if available.
- *
- * @param button The GtkButton that was clicked
- * @param user_data Not used here, but can be used to pass additional data
- */
-void on_back_clicked(GtkButton *button, gpointer user_data) {
 
-    TabContext* ctx = get_current_tab_context();
-
-    if (ctx && ctx->back_stack) {
-        char *prev_path = ctx->back_stack->data;
-        ctx->back_stack = g_list_delete_link(ctx->back_stack, ctx->back_stack);
-        ctx->forward_stack = g_list_prepend(ctx->forward_stack, g_strdup(ctx->current_directory));
-        populate_files_in_container(prev_path, ctx->scrolled_window, ctx);
-    }
-}
-
-/**
- * Callback for the forward button.
- * It navigates to the next directory in the forward stack, if available.
- *
- * @param button The GtkButton that was clicked
- * @param user_data Not used here, but can be used to pass additional data
- */
-void on_forward_clicked(GtkButton *button, gpointer user_data) {
-
-    TabContext* ctx = get_current_tab_context();
-
-    if (ctx && ctx->forward_stack) {
-        char *next_path = ctx->forward_stack->data;
-        ctx->forward_stack = g_list_delete_link(ctx->forward_stack, ctx->forward_stack);
-        ctx->back_stack = g_list_prepend(ctx->back_stack, g_strdup(ctx->current_directory));
-        populate_files_in_container(next_path, ctx->scrolled_window, ctx);
-    }
-}
 
 /**
  * Gets the current TabContext based on the currently active tab in the notebook.
