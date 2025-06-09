@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "main.h"
 #include <stdlib.h>
+#include "snake.h"
 
 /**
  * Callback for g_file_query_info_async that sets the icon for the image widget of a file item.
@@ -261,7 +262,6 @@ GtkWidget* create_left_box() {
 }
 
 
-
 /**
  * Creates a toolbar with navigation controls
  * @param default_directory Initial directory to display
@@ -311,6 +311,10 @@ Toolbar create_toolbar(const char* default_directory) {
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.up_button);
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.directory_entry);
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.search_entry);
+
+    GtkWidget *snake_button = gtk_button_new_with_label("Snake");
+    gtk_box_append(GTK_BOX(toolbar.toolbar), snake_button);
+    g_signal_connect(snake_button, "clicked", G_CALLBACK(launch_snake), NULL);
 
     return toolbar;
 }
