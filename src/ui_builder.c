@@ -224,6 +224,8 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
 GtkWidget* create_left_box() {
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_widget_set_size_request(box, 200, -1);
+
     GtkWidget *label = gtk_label_new("Directories");
     gtk_box_append(GTK_BOX(box), label);
 
