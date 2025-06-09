@@ -140,12 +140,23 @@ static GtkWidget* create_directory_row(GFile *file) {
     GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
 
+    // Create an arrow icon for expansion indicator
+    GtkWidget *arrow = gtk_image_new_from_icon_name("pan-end-symbolic");
+    gtk_widget_set_margin_start(arrow, 2);
+    gtk_widget_set_margin_end(arrow, 5);
+
+    // Create the label for the directory name
     GtkWidget *label = gtk_label_new(g_file_get_basename(file));
     gtk_label_set_xalign(GTK_LABEL(label), 0.0);
     gtk_widget_set_hexpand(label, TRUE);
 
+    // Add the arrow and label to the header
+    gtk_box_append(GTK_BOX(header), arrow);
     gtk_box_append(GTK_BOX(header), label);
     gtk_box_append(GTK_BOX(row_box), header);
+
+    // Store the arrow widget for later access
+    g_object_set_data(G_OBJECT(row_box), "arrow-icon", arrow);
 
     // Attach gesture for click handling
     GtkGesture *click = gtk_gesture_click_new();
@@ -170,13 +181,21 @@ static GtkWidget* create_directory_row(GFile *file) {
  */
 static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
     GtkWidget *row_box = GTK_WIDGET(user_data);
+    GtkWidget *arrow = g_object_get_data(G_OBJECT(row_box), "arrow-icon");
 
     GtkWidget *existing_list = g_object_get_data(G_OBJECT(row_box), "child-list");
     if (existing_list) {
+        // Collapse the directory
         gtk_widget_unparent(existing_list);
         g_object_set_data(G_OBJECT(row_box), "child-list", NULL);
+
+        // Change arrow to point right (collapsed)
+        gtk_image_set_from_icon_name(GTK_IMAGE(arrow), "pan-end-symbolic");
         return;
     }
+
+    // Change arrow to point down (expanded)
+    gtk_image_set_from_icon_name(GTK_IMAGE(arrow), "pan-down-symbolic");
 
     GFile *dir = g_object_get_data(G_OBJECT(row_box), "file");
     if (!dir) return;
@@ -222,11 +241,16 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
  */
 GtkWidget* create_left_box() {
 
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
     //gtk_widget_set_size_request(box, 200, -1);
 
     GtkWidget *label = gtk_label_new("Directories");
     gtk_box_append(GTK_BOX(box), label);
+
+    gtk_widget_set_margin_start(box, SPACING);
+    gtk_widget_set_margin_end(box, SPACING);
+    gtk_widget_set_margin_top(box, SPACING);
+    gtk_widget_set_margin_bottom(box, SPACING);
 
     GtkWidget *sw = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -236,6 +260,19 @@ GtkWidget* create_left_box() {
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
     gtk_widget_set_vexpand(list, TRUE);
     gtk_widget_set_hexpand(list, TRUE);
+
+    // Disable the default blue highlighting of list items using CSS
+    gtk_widget_add_css_class(list, "sidebar-list");
+
+    GtkCssProvider *provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(provider,
+        ".sidebar-list { background-color: transparent; }"
+        ".sidebar-list row:selected { background-color: transparent; }"
+        ".sidebar-list row:hover { background-color: rgba(128, 128, 128, 0.1); }");
+
+    GdkDisplay *display = gtk_widget_get_display(list);
+    gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
 
     GFile *root = g_file_new_for_path("/");
 
