@@ -216,6 +216,7 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
 }
 
 /**
+ * guh
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
