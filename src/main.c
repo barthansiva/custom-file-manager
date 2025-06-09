@@ -3,6 +3,7 @@
 #include "ui_builder.h"
 #include "main.h"
 #include <stdlib.h>
+#include "snake.h"
 
 GtkWidget *main_file_container;
 GtkWidget *directory_entry;
@@ -80,7 +81,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Tabs
     //
 
-    GtkWidget *add_tab_button = gtk_button_new_with_label("+");
+    GtkWidget *add_tab_button = gtk_button_new_from_icon_name("tab-new-symbolic");
     gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
     gtk_box_append(GTK_BOX(toolbar.toolbar), add_tab_button);
 
@@ -171,14 +172,17 @@ void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
 void directory_entry_changed(  GtkEntry* self, gpointer user_data) {
     const char *new_directory = gtk_editable_get_text(GTK_EDITABLE(self));
     TabContext* ctx = get_current_tab_context();
+    if (strcmp(new_directory,"play/snake") == 0) {
+        launch_snake();
+        gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
+        return;
+    }
     if (new_directory != NULL && strlen(new_directory) != 0 && strcmp(new_directory, ctx->current_directory) != 0) {
-            const GFile *file = g_file_new_for_path(new_directory);
-            if (file) {
+            if (g_file_test(new_directory, G_FILE_TEST_EXISTS) && g_file_test(new_directory, G_FILE_TEST_IS_DIR)) {
                 populate_files_in_container(new_directory, ctx->scrolled_window, ctx);
             } else {
                 gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
             }
-            g_object_unref(G_OBJECT(file));
     }
 }
 
@@ -205,12 +209,7 @@ void on_up_clicked() {
 
         // Populate files with the parent directory
         populate_files_in_container(parent_path, ctx->scrolled_window, ctx);
-
-        // Free resources
-        // g_free(parent_path);
-        // g_object_unref(parent);
     }
-
     g_object_unref(current);
 }
 

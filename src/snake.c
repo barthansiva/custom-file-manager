@@ -125,7 +125,7 @@ static void on_snake_window_close(GtkWindow *window, gpointer user_data) {
     gtk_window_destroy(window);
 }
 
-void launch_snake(GtkButton *button, gpointer user_data) {
+void launch_snake() {
     srand(time(NULL));
     reset_game();
 

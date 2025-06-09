@@ -3,6 +3,6 @@
 
 #include <gtk/gtk.h>
 
-void launch_snake(GtkButton *button, gpointer user_data);
+void launch_snake();
 
 #endif

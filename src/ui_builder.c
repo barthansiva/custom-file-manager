@@ -2,7 +2,6 @@
 #include "utils.h"
 #include "main.h"
 #include <stdlib.h>
-#include "snake.h"
 
 /**
  * Callback for g_file_query_info_async that sets the icon for the image widget of a file item.
@@ -224,17 +223,19 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
 GtkWidget* create_left_box() {
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_widget_set_size_request(box, 200, -1);
+    //gtk_widget_set_size_request(box, 200, -1);
 
     GtkWidget *label = gtk_label_new("Directories");
     gtk_box_append(GTK_BOX(box), label);
 
     GtkWidget *sw = gtk_scrolled_window_new();
-    gtk_widget_set_vexpand(sw, TRUE);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_box_append(GTK_BOX(box), sw);
 
     GtkWidget *list = gtk_list_box_new();
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
+    gtk_widget_set_vexpand(list, TRUE);
+    gtk_widget_set_hexpand(list, TRUE);
 
     GFile *root = g_file_new_for_path("/");
 
@@ -298,7 +299,7 @@ Toolbar create_toolbar(const char* default_directory) {
 
     gtk_entry_set_icon_from_gicon(GTK_ENTRY(toolbar.directory_entry),
                               GTK_ENTRY_ICON_SECONDARY,
-                              g_themed_icon_new("checkmark-symbolic"));
+                              g_themed_icon_new("object-select-symbolic"));
     gtk_entry_set_icon_activatable(GTK_ENTRY(toolbar.directory_entry),
                                    GTK_ENTRY_ICON_SECONDARY,
                                    TRUE);
@@ -313,10 +314,6 @@ Toolbar create_toolbar(const char* default_directory) {
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.up_button);
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.directory_entry);
     gtk_box_append(GTK_BOX(toolbar.toolbar), toolbar.search_entry);
-
-    GtkWidget *snake_button = gtk_button_new_with_label("Snake");
-    gtk_box_append(GTK_BOX(toolbar.toolbar), snake_button);
-    g_signal_connect(snake_button, "clicked", G_CALLBACK(launch_snake), NULL);
 
     return toolbar;
 }
