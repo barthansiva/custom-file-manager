@@ -10,6 +10,8 @@ typedef struct {
     GtkWidget *scrolled_window;
     GtkWidget *tab_label;
     char *current_directory;
+    GtkWidget *preview_text_view;
+    GtkWidget *preview_revealer;
 } TabContext;
 
 TabContext* get_current_tab_context();

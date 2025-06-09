@@ -12,13 +12,6 @@ GtkWidget *search_entry;
 
 const char *default_directory = "/home"; // Default directory to start in
 
-// // Struct declarations
-// typedef struct {
-//     GtkWidget *scrolled_window;
-//     GtkWidget *tab_label;
-//     char *current_directory;
-// } TabContext;
-
 // Function declarations
 void file_clicked(GtkGridView *view, guint position, gpointer user_data);
 
@@ -28,12 +21,11 @@ void on_up_clicked();
 
 void on_close_tab_clicked(GtkButton *button, gpointer user_data);
 
-
 void add_tab_with_directory(const char* path);
 
+void update_preview_text(TabContext *ctx, GFile *file);
+
 TabContext* get_current_tab_context();
-
-
 
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
 
@@ -80,7 +72,6 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     // Tabs
     //
-
     GtkWidget *add_tab_button = gtk_button_new_from_icon_name("tab-new-symbolic");
     gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
     gtk_box_append(GTK_BOX(toolbar.toolbar), add_tab_button);
@@ -88,17 +79,11 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Connect signal
     g_signal_connect(add_tab_button, "clicked", G_CALLBACK(on_add_tab_clicked), NULL);
 
-
     // Connect signals
     g_signal_connect(toolbar.up_button, "clicked", G_CALLBACK(on_up_clicked), NULL);
 
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
-
-    //
-    // Initial Tabs
-   // add_tab_with_directory(default_directory);
-
 
     //
     // File Container Area — using notebook now
@@ -154,10 +139,23 @@ void file_clicked(GtkGridView *view, guint position, gpointer user_data) {
     GFileType type = g_file_info_get_file_type(info);
 
     if (type == G_FILE_TYPE_DIRECTORY) {
+        gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), FALSE);
         const char *path = g_file_get_path(file);
         populate_files_in_container(path, ctx->scrolled_window, ctx);
     } else {
-        g_print("File %s clicked\n", g_file_get_basename(file));
+        GFileInfo *full_info = g_file_query_info(file,
+            G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+            G_FILE_QUERY_INFO_NONE, NULL, NULL);
+
+        if (full_info) {
+            const char *mime = g_file_info_get_content_type(full_info);
+            if (g_str_has_prefix(mime, "text/")) {
+                update_preview_text(ctx, file);
+            } else {
+                gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), FALSE);
+            }
+            g_object_unref(full_info);
+        }
     }
 
     g_object_unref(file);
@@ -190,26 +188,20 @@ void directory_entry_changed(  GtkEntry* self, gpointer user_data) {
  * Function to go up one directory level
  */
 void on_up_clicked() {
-
     TabContext* ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) return;
 
-    if (ctx->current_directory == NULL) {
-        return;
-    }
-
-    // Create a GFile from the current directory
     GFile *current = g_file_new_for_path(ctx->current_directory);
-
-    // Get the parent directory
     GFile *parent = g_file_get_parent(current);
 
     if (parent != NULL) {
-        // Get the path of the parent directory
         const char *parent_path = g_file_get_path(parent);
-
-        // Populate files with the parent directory
-        populate_files_in_container(parent_path, ctx->scrolled_window, ctx);
+        if (parent_path) {
+            populate_files_in_container(parent_path, ctx->scrolled_window, ctx);
+        }
+        g_object_unref(parent);
     }
+
     g_object_unref(current);
 }
 
@@ -222,20 +214,43 @@ void on_up_clicked() {
  * @param path The directory path to load in the new tab
  */
 void add_tab_with_directory(const char* path) {
-    // Create and allocate tab context
     TabContext *ctx = g_malloc0(sizeof(TabContext));
     ctx->current_directory = g_strdup(path);
 
-    // Create file container
+    // File list container
     ctx->scrolled_window = gtk_scrolled_window_new();
     gtk_widget_set_hexpand(ctx->scrolled_window, TRUE);
     gtk_widget_set_vexpand(ctx->scrolled_window, TRUE);
 
-    // Create tab label
+    // Preview setup
+    ctx->preview_text_view = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(ctx->preview_text_view), FALSE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(ctx->preview_text_view), GTK_WRAP_WORD);
+
+    GtkWidget *preview_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(preview_scroll), ctx->preview_text_view);
+
+    ctx->preview_revealer = gtk_revealer_new();
+    gtk_revealer_set_transition_type(GTK_REVEALER(ctx->preview_revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_LEFT);
+    gtk_widget_set_hexpand(ctx->preview_revealer, TRUE);
+    gtk_widget_set_vexpand(ctx->preview_revealer, TRUE);
+    gtk_revealer_set_child(GTK_REVEALER(ctx->preview_revealer), preview_scroll);
+    gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), FALSE);  // initially hidden
+
+    // Split pane with file list and preview
+    GtkWidget *split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_hexpand(split, TRUE);
+    gtk_widget_set_vexpand(split, TRUE);
+    gtk_paned_set_start_child(GTK_PANED(split), ctx->scrolled_window);
+    gtk_paned_set_end_child(GTK_PANED(split), ctx->preview_revealer);
+
+    // Save context to lookup later
+    g_object_set_data(G_OBJECT(split), "tab_ctx", ctx);
+
+    // Tab label setup
     const char* tab_name = g_path_get_basename(path);
     ctx->tab_label = gtk_label_new(tab_name);
 
-    // Create custom tab header box (label + close button)
     GtkWidget *tab_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_halign(tab_header, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(tab_header, GTK_ALIGN_CENTER);
@@ -249,20 +264,17 @@ void add_tab_with_directory(const char* path) {
     gtk_box_append(GTK_BOX(tab_header), ctx->tab_label);
     gtk_box_append(GTK_BOX(tab_header), close_button);
 
-    // Populate files into this container
-    populate_files_in_container(path, ctx->scrolled_window, ctx);
-
-    // Add the new tab
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), ctx->scrolled_window, tab_header);
-    g_object_set_data(G_OBJECT(ctx->scrolled_window), "tab_ctx", ctx);
-
-    // Connect close button handler
     g_signal_connect(close_button, "clicked", G_CALLBACK(on_close_tab_clicked), notebook);
 
-    // Switch to the newly added tab
+    // Load file contents
+    populate_files_in_container(path, ctx->scrolled_window, ctx);
+
+    // Add tab
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), split, tab_header);
     int total_pages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
     gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), total_pages - 1);
 }
+
 
 /**
  * Populates a given scrolled window container with file views from a directory,
@@ -347,23 +359,13 @@ void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
  * @return Pointer to the current TabContext, or NULL if no tab is active.
  */
 TabContext* get_current_tab_context() {
-
     int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
     if (page < 0) return NULL;
 
-    GtkWidget *container = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
-    TabContext *ctx = NULL;
+    GtkWidget *split = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
+    if (!split) return NULL;
 
-    // Try to find the right TabContext
-    for (int i = 0; i < gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook)); i++) {
-        GtkWidget *pg = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), i);
-        if (pg == container) {
-            // crude lookup: we assume ctx is associated with container memory-wise
-            ctx = g_object_get_data(G_OBJECT(pg), "tab_ctx");
-            break;
-        }
-    }
-    return ctx;
+    return g_object_get_data(G_OBJECT(split), "tab_ctx");
 }
 
 void populate_files_with_filter(const char *filter) {
@@ -419,6 +421,30 @@ void populate_files_with_filter(const char *filter) {
 void search_entry_changed(GtkEditable *editable, gpointer user_data) {
     const char *query = gtk_editable_get_text(editable);
     populate_files_with_filter(query);
+}
+
+void update_preview_text(TabContext *ctx, GFile *file) {
+    if (!ctx || !ctx->preview_text_view || !ctx->preview_revealer) return;
+
+    char *path = g_file_get_path(file);
+    if (!path) return;
+
+    gchar *content = NULL;
+    gsize length;
+    GError *error = NULL;
+
+    if (!g_file_get_contents(path, &content, &length, &error)) {
+        gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(ctx->preview_text_view)),
+                                 "Could not read file.", -1);
+        if (error) g_error_free(error);
+    } else {
+        gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(ctx->preview_text_view)),
+                                 content, -1);
+        g_free(content);
+    }
+
+    gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), TRUE);
+    g_free(path);
 }
 
 int main(int argc, char **argv) {
