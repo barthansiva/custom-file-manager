@@ -7,6 +7,7 @@
 GtkWidget *main_file_container;
 GtkWidget *directory_entry;
 GtkWidget *notebook;
+GtkWidget *search_entry;
 
 const char *default_directory = "/home"; // Default directory to start in
 
@@ -34,6 +35,8 @@ TabContext* get_current_tab_context();
 
 
 void on_add_tab_clicked(GtkButton *button, gpointer user_data);
+
+void search_entry_changed(GtkEditable *editable, gpointer user_data);
 
 /**
  * Builds the core widget structure of the application
@@ -63,6 +66,12 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Toolbar
     //
     Toolbar toolbar = create_toolbar(default_directory);
+
+    //
+    // Search
+    //
+    search_entry = toolbar.search_entry;
+    g_signal_connect(search_entry, "changed", G_CALLBACK(search_entry_changed), NULL);
 
     // Store directory_entry in the global variable
     directory_entry = toolbar.directory_entry;
@@ -356,6 +365,61 @@ TabContext* get_current_tab_context() {
         }
     }
     return ctx;
+}
+
+void populate_files_with_filter(const char *filter) {
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) return;
+
+    size_t file_count = 0;
+    GListStore *raw_files = get_files_in_directory(ctx->current_directory, &file_count);
+    if (!raw_files) return;
+
+    // Prepare filtered list
+    GListStore *filtered_files = g_list_store_new(G_TYPE_FILE);
+    for (guint i = 0; i < g_list_model_get_n_items(G_LIST_MODEL(raw_files)); i++) {
+        GFile *file = g_list_model_get_item(G_LIST_MODEL(raw_files), i);
+        const char *basename = g_file_get_basename(file);
+
+        if (!filter || strlen(filter) == 0 || g_strrstr(basename, filter)) {
+            g_list_store_append(filtered_files, file);
+        }
+
+        g_object_unref(file);
+    }
+    g_object_unref(raw_files);
+
+    // If no matches found, avoid updating the view
+    if (g_list_model_get_n_items(G_LIST_MODEL(filtered_files)) == 0) {
+        g_object_unref(filtered_files);
+        return;
+    }
+
+    GtkWidget *view = gtk_grid_view_new(
+        GTK_SELECTION_MODEL(gtk_multi_selection_new(G_LIST_MODEL(filtered_files))),
+        gtk_signal_list_item_factory_new()
+    );
+
+    g_signal_connect(view, "activate", G_CALLBACK(file_clicked), ctx);
+
+    // Setup factory
+    GtkListItemFactory *factory = gtk_grid_view_get_factory(GTK_GRID_VIEW(view));
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_file_item), NULL);
+    g_signal_connect(factory, "bind", G_CALLBACK(bind_file_item), NULL);
+
+    // Replace old view safely
+    GtkWidget *old_view = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctx->scrolled_window));
+    if (GTK_IS_WIDGET(old_view)) {
+        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ctx->scrolled_window), NULL);
+    }
+
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ctx->scrolled_window), view);
+}
+
+
+void search_entry_changed(GtkEditable *editable, gpointer user_data) {
+    const char *query = gtk_editable_get_text(editable);
+    populate_files_with_filter(query);
 }
 
 int main(int argc, char **argv) {
