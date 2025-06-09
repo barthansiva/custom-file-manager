@@ -34,6 +34,10 @@ void tab_changed(GtkNotebook* self, GtkWidget* page, guint page_num, gpointer us
 
 static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+void undo_button_clicked(GtkButton *button, gpointer user_data);
+
+void redo_button_clicked(GtkButton *button, gpointer user_data);
+
 static const GActionEntry win_actions[] = {
     { "delete", menu_delete_clicked, "s", NULL, NULL }
 };
@@ -57,7 +61,10 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     //  Left side panel
     //
-    GtkWidget *left_box = create_left_box();
+    left_box_t left_box = create_left_box();
+
+    g_signal_connect(left_box.undo_button,"clicked",G_CALLBACK(undo_button_clicked),NULL);
+    g_signal_connect(left_box.redo_button,"clicked",G_CALLBACK(redo_button_clicked),NULL);
 
     //
     //  Main right container
@@ -71,7 +78,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     // Toolbar
     //
-    Toolbar toolbar = create_toolbar(default_directory);
+    toolbar_t toolbar = create_toolbar(default_directory);
 
     //
     // Search
@@ -118,7 +125,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     //
     GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
 
-    gtk_paned_set_start_child(GTK_PANED(hpaned), left_box);
+    gtk_paned_set_start_child(GTK_PANED(hpaned), left_box.side_panel);
     gtk_paned_set_shrink_start_child(GTK_PANED(hpaned), FALSE);
     gtk_paned_set_resize_start_child(GTK_PANED(hpaned), FALSE);
 
@@ -546,6 +553,18 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
     // Free the split basenames array
     g_strfreev(files);
     reload_current_directory();
+}
+
+void undo_button_clicked(GtkButton *button, gpointer user_data) {
+    if (undo_last_operation()) {
+        reload_current_directory();
+    }
+}
+
+void redo_button_clicked(GtkButton *button, gpointer user_data) {
+    if (redo_last_undo()) {
+        reload_current_directory();
+    }
 }
 
 int main(int argc, char **argv) {

@@ -248,22 +248,32 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
-GtkWidget* create_left_box() {
+left_box_t create_left_box() {
 
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
-    //gtk_widget_set_size_request(box, 200, -1);
+    left_box_t left_box;
 
-    GtkWidget *label = gtk_label_new("Directories");
-    gtk_box_append(GTK_BOX(box), label);
+    left_box.side_panel = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
 
-    gtk_widget_set_margin_start(box, SPACING);
-    gtk_widget_set_margin_end(box, SPACING);
-    gtk_widget_set_margin_top(box, SPACING);
-    gtk_widget_set_margin_bottom(box, SPACING);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING);
+
+    left_box.undo_button = GTK_BUTTON(gtk_button_new_from_icon_name("edit-undo-symbolic"));
+    gtk_widget_set_tooltip_text(GTK_WIDGET(left_box.undo_button), "Undo last operation");
+
+    left_box.redo_button = GTK_BUTTON(gtk_button_new_from_icon_name("edit-redo-symbolic"));
+    gtk_widget_set_tooltip_text(GTK_WIDGET(left_box.redo_button), "Redo last undone operation");
+
+    gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(left_box.undo_button));
+    gtk_box_append(GTK_BOX(hbox), GTK_WIDGET(left_box.redo_button));
+    gtk_box_append(GTK_BOX(left_box.side_panel), hbox);
+
+    gtk_widget_set_margin_start(left_box.side_panel, SPACING);
+    gtk_widget_set_margin_end(left_box.side_panel, SPACING);
+    gtk_widget_set_margin_top(left_box.side_panel, SPACING);
+    gtk_widget_set_margin_bottom(left_box.side_panel, SPACING);
 
     GtkWidget *sw = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_box_append(GTK_BOX(box), sw);
+    gtk_box_append(GTK_BOX(left_box.side_panel), sw);
 
     GtkWidget *list = gtk_list_box_new();
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), list);
@@ -290,7 +300,6 @@ GtkWidget* create_left_box() {
     if (!enumerator) {
         g_warning("Failed to enumerate root: %s", error->message);
         g_error_free(error);
-        return box;
     }
 
     GFileInfo *info;
@@ -307,7 +316,7 @@ GtkWidget* create_left_box() {
     g_object_unref(enumerator);
     g_object_unref(root);
 
-    return box;
+    return left_box;
 }
 
 
@@ -316,8 +325,8 @@ GtkWidget* create_left_box() {
  * @param default_directory Initial directory to display
  * @return Toolbar struct containing all toolbar widgets
  */
-Toolbar create_toolbar(const char* default_directory) {
-    Toolbar toolbar;
+toolbar_t create_toolbar(const char* default_directory) {
+    toolbar_t toolbar;
 
     // Create the toolbar container
     toolbar.toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, SPACING);

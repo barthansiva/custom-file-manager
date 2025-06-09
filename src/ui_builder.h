@@ -6,6 +6,22 @@
 #include "main.h"
 
 /**
+ * Struct to hold the toolbar widgets
+ */
+typedef struct {
+    GtkWidget* toolbar;
+    GtkWidget* up_button;
+    GtkWidget* directory_entry;
+    GtkWidget* search_entry;
+} toolbar_t;
+
+typedef struct {
+    GtkWidget* side_panel;
+    GtkButton* undo_button;
+    GtkButton* redo_button;
+} left_box_t;
+
+/**
  * Sets up a list item factory for displaying files in a list.
  * This function is called when the factory is created.
  * It sets up the structure of each file item in the list. (only the structure, not the data)
@@ -29,17 +45,8 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item);
  * Creates the widget structure for the side panel
  * @return GtkWidget* containing the side panel
  */
-GtkWidget* create_left_box();
+left_box_t create_left_box();
 
-/**
- * Struct to hold the toolbar widgets
- */
-typedef struct {
-    GtkWidget* toolbar;
-    GtkWidget* up_button;
-    GtkWidget* directory_entry;
-    GtkWidget* search_entry;
-} Toolbar;
 
 // Logic for the collapsable directory structures
 static GtkWidget* create_directory_row(GFile *file);
@@ -52,7 +59,7 @@ void set_context(TabContext* ctx);
  * @param default_directory The default directory to display in the entry
  * @return A struct containing the toolbar widgets
  */
-Toolbar create_toolbar(const char* default_directory);
+toolbar_t create_toolbar(const char* default_directory);
 
 GtkPopoverMenu* create_file_context_menu(const char* params);
 

@@ -8,6 +8,8 @@
 
 // Operation history
 GArray *operation_history = NULL;
+// Forward history (for redoing undone operations)
+GArray *forward_history = NULL;
 const int MAX_HISTORY_SIZE = 50; // Maximum number of operations to store in history
 
 /**
@@ -61,11 +63,11 @@ GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
     closedir(dir);
     *file_count = count;
 
-    // If directory empty
-    if (count == 0) {
-        g_object_unref(files);
-        return NULL;
-    }
+    // // If directory empty
+    // if (count == 0) {
+    //     g_object_unref(files);
+    //     return NULL;
+    // }
 
     return files;
 }
@@ -77,6 +79,9 @@ GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
 void init_operation_history(void) {
     if (!operation_history) {
         operation_history = g_array_new(FALSE, FALSE, sizeof(operation_t));
+    }
+    if (!forward_history) {
+        forward_history = g_array_new(FALSE, FALSE, sizeof(operation_t));
     }
 }
 
@@ -95,6 +100,18 @@ void cleanup_operation_history(void) {
         }
         g_array_free(operation_history, TRUE);
         operation_history = NULL;
+    }
+
+    if (forward_history) {
+        // Free any operation data
+        for (guint i = 0; i < forward_history->len; i++) {
+            operation_t *op = &g_array_index(forward_history, operation_t, i);
+            if (op->data) {
+                g_free(op->data);
+            }
+        }
+        g_array_free(forward_history, TRUE);
+        forward_history = NULL;
     }
 }
 
@@ -151,7 +168,7 @@ gboolean delete_file(const char* path) {
     g_print("Deleting file: %s\n", path_copy);
 
     // Attempt to delete the file
-    gboolean success = g_file_delete(file, NULL, &error);
+    gboolean success = g_file_trash(file, NULL, &error);
     if (!success) {
         g_warning("Failed to delete file: %s, error: %s", path, error ? error->message : "Unknown error");
         g_free(path_copy);
@@ -451,4 +468,287 @@ char** split_basenames(const char* joined_string, const char* separator, size_t*
 
     *count = num_parts;
     return parts;
+}
+
+/**
+ * Undoes a delete operation by restoring the file from trash
+ * @param operation The operation to undo (must be OPERATION_TYPE_DELETE)
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_delete_file(operation_t operation) {
+    if (operation.type != OPERATION_TYPE_DELETE) {
+        g_warning("Attempted to undo non-delete operation");
+        return FALSE;
+    }
+
+    // The operation data contains the original path of the deleted file
+    const char *orig_path = (const char *)operation.data;
+    if (!orig_path) {
+        g_warning("Invalid operation data for undo delete");
+        return FALSE;
+    }
+
+    // Get the trash directory
+    g_autoptr(GFile) trash_dir = g_file_new_for_uri("trash:///");
+
+    // Enumerate files in the trash to find our file
+    g_autoptr(GFileEnumerator) enumerator =
+        g_file_enumerate_children(trash_dir,
+                                 G_FILE_ATTRIBUTE_STANDARD_NAME "," G_FILE_ATTRIBUTE_TRASH_ORIG_PATH,
+                                 G_FILE_QUERY_INFO_NONE,
+                                 NULL, NULL);
+
+    if (!enumerator) {
+        g_warning("Could not access trash directory");
+        return FALSE;
+    }
+
+    // Find the file in trash that matches our original path
+    g_autoptr(GFile) trashed_file = NULL;
+    g_autoptr(GFileInfo) info = NULL;
+
+    while ((info = g_file_enumerator_next_file(enumerator, NULL, NULL)) != NULL) {
+        g_autofree char *trash_orig_path =
+            g_file_info_get_attribute_as_string(info, G_FILE_ATTRIBUTE_TRASH_ORIG_PATH);
+
+        if (g_strcmp0(trash_orig_path, orig_path) == 0) {
+            // Found our file
+            const char *name = g_file_info_get_name(info);
+            trashed_file = g_file_get_child(trash_dir, name);
+            g_object_unref(info);
+            break;
+        }
+
+        g_object_unref(info);
+    }
+
+    if (!trashed_file) {
+        g_warning("Could not find the deleted file in trash: %s", orig_path);
+        return FALSE;
+    }
+
+    // Create the target file
+    g_autoptr(GFile) target = g_file_new_for_path(orig_path);
+
+    // Move the file from trash back to original location
+    g_autoptr(GError) error = NULL;
+    gboolean success = g_file_move(trashed_file,
+                                  target,
+                                  G_FILE_COPY_NONE,
+                                  NULL, NULL, NULL,
+                                  &error);
+
+    if (!success) {
+        g_warning("Failed to restore file from trash: %s", error ? error->message : "Unknown error");
+        return FALSE;
+    }
+
+    g_print("Successfully restored file: %s\n", orig_path);
+    return TRUE;
+}
+
+/**
+ * Undoes the given operation by calling the appropriate undo function
+ * @param operation The operation to undo
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_operation(operation_t operation) {
+    // Handle operation based on its type
+    switch (operation.type) {
+        case OPERATION_TYPE_MOVE:
+            return undo_move_file(operation);
+
+        case OPERATION_TYPE_DELETE:
+            return undo_delete_file(operation);
+
+        case OPERATION_TYPE_COPY:
+            g_print("Undo for copy operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_PASTE:
+            g_print("Undo for paste operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_CREATE_DIRECTORY:
+            g_print("Undo for create directory operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_CREATE_FILE:
+            g_print("Undo for create file operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_NONE:
+        default:
+            g_warning("Cannot undo operation of unknown or invalid type: %d", operation.type);
+            return FALSE;
+    }
+}
+
+/**
+ * Undoes the last operation in the history and stores it in forward history for possible redo
+ * @return TRUE if successful, FALSE if no operations to undo
+ */
+gboolean undo_last_operation(void) {
+    // Check if there are any operations to undo
+    if (!operation_history || operation_history->len == 0) {
+        g_print("No operations to undo\n");
+        return FALSE;
+    }
+
+    // Get the last operation from the history
+    operation_t *last_op = &g_array_index(operation_history, operation_t, operation_history->len - 1);
+
+    // Make a copy of the operation for forward history
+    operation_t forward_op;
+    forward_op.type = last_op->type;
+
+    // Deep copy of operation data based on type
+    switch (last_op->type) {
+        case OPERATION_TYPE_DELETE:
+            // For delete operations, data is a string (path)
+            forward_op.data = g_strdup((char *)last_op->data);
+            break;
+
+        case OPERATION_TYPE_MOVE:
+            // For move operations, data is a move_paths_t struct
+            {
+                move_paths_t *orig_paths = (move_paths_t *)last_op->data;
+                move_paths_t *new_paths = g_malloc(sizeof(move_paths_t));
+                new_paths->source_path = g_strdup(orig_paths->source_path);
+                new_paths->dest_path = g_strdup(orig_paths->dest_path);
+                forward_op.data = new_paths;
+            }
+            break;
+
+        case OPERATION_TYPE_COPY:
+        case OPERATION_TYPE_PASTE:
+        case OPERATION_TYPE_CREATE_DIRECTORY:
+        case OPERATION_TYPE_CREATE_FILE:
+        case OPERATION_TYPE_NONE:
+            // For other operations, just copy the pointer (or NULL)
+            forward_op.data = last_op->data;
+            break;
+    }
+
+    // Try to undo the operation
+    gboolean success = undo_operation(*last_op);
+
+    if (success) {
+        // Add the operation to forward history for possible redo
+        if (!forward_history) {
+            forward_history = g_array_new(FALSE, FALSE, sizeof(operation_t));
+        }
+        g_array_append_val(forward_history, forward_op);
+
+        // Remove the operation from the history
+        // Note: we don't free data because we moved it to forward_op
+        g_array_remove_index(operation_history, operation_history->len - 1);
+
+        g_print("Operation undone successfully\n");
+    } else {
+        // Free the copied data if undo failed
+        if (forward_op.data) {
+            switch (forward_op.type) {
+                case OPERATION_TYPE_DELETE:
+                    g_free(forward_op.data);
+                    break;
+
+                case OPERATION_TYPE_MOVE:
+                    {
+                        move_paths_t *paths = (move_paths_t *)forward_op.data;
+                        g_free(paths->source_path);
+                        g_free(paths->dest_path);
+                        g_free(paths);
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        g_print("Failed to undo operation\n");
+    }
+
+    return success;
+}
+
+/**
+ * Redoes the last undone operation by applying it again
+ * @return TRUE if successful, FALSE if no operations to redo
+ */
+gboolean redo_last_undo(void) {
+    // Check if there are any operations to redo
+    if (!forward_history || forward_history->len == 0) {
+        g_print("No operations to redo\n");
+        return FALSE;
+    }
+
+    // Get the last operation from the forward history
+    operation_t *fwd_op = &g_array_index(forward_history, operation_t, forward_history->len - 1);
+
+    // Create a new operation for the history
+    operation_t history_op;
+    history_op.type = fwd_op->type;
+
+    // Deep copy of operation data based on type
+    switch (fwd_op->type) {
+        case OPERATION_TYPE_DELETE: {
+            // For redo of delete, we need to delete the file again
+            const char *path = (const char *)fwd_op->data;
+            gboolean success = delete_file(path);
+
+            if (!success) {
+                g_warning("Failed to redo delete operation for file: %s", path);
+                return FALSE;
+            }
+
+            // delete_file already adds this to the history, so return immediately
+            // Also remove the forward operation
+            g_array_remove_index(forward_history, forward_history->len - 1);
+            g_print("Delete operation redone successfully\n");
+            return TRUE;
+        }
+
+        case OPERATION_TYPE_MOVE: {
+            // For redo of move, we need to move the file again
+            move_paths_t *paths = (move_paths_t *)fwd_op->data;
+
+            // Move the file (original source to dest)
+            gboolean success = move_file(paths->source_path, paths->dest_path);
+
+            if (!success) {
+                g_warning("Failed to redo move operation from %s to %s",
+                          paths->source_path, paths->dest_path);
+                return FALSE;
+            }
+
+            // move_file already adds this to the history, so return immediately
+            // Also remove the forward operation
+            g_array_remove_index(forward_history, forward_history->len - 1);
+            g_print("Move operation redone successfully\n");
+            return TRUE;
+        }
+
+        case OPERATION_TYPE_COPY:
+            g_print("Redo for copy operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_PASTE:
+            g_print("Redo for paste operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_CREATE_DIRECTORY:
+            g_print("Redo for create directory operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_CREATE_FILE:
+            g_print("Redo for create file operation is not yet implemented\n");
+            return FALSE;
+
+        case OPERATION_TYPE_NONE:
+        default:
+            g_warning("Cannot redo operation of unknown or invalid type: %d", fwd_op->type);
+            return FALSE;
+    }
 }

@@ -81,6 +81,32 @@ gboolean move_file(const char* source_path, const char* dest_path);
 gboolean undo_move_file(operation_t operation);
 
 /**
+ * Undoes a delete operation by restoring the file from trash
+ * @param operation The operation to undo (must be OPERATION_TYPE_DELETE)
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_delete_file(operation_t operation);
+
+/**
+ * Undoes the given operation by calling the appropriate undo function
+ * @param operation The operation to undo
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_operation(operation_t operation);
+
+/**
+ * Undoes the last operation in the history and stores it in forward history for possible redo
+ * @return TRUE if successful, FALSE if no operations to undo
+ */
+gboolean undo_last_operation(void);
+
+/**
+ * Redoes the last undone operation by applying it again
+ * @return TRUE if successful, FALSE if no operations to redo
+ */
+gboolean redo_last_undo(void);
+
+/**
  * Adds an operation to the operation history
  * @param operation The operation to add
  */
