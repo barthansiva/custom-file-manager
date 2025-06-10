@@ -18,7 +18,7 @@ const int MAX_HISTORY_SIZE = 50; // Maximum number of operations to store in his
  * @param file_count Pointer to store the number of files found
  * @return GListStore of GFile objects representing the files/directories
  */
-GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
+GListStore* get_files_in_directory(const char* directory, size_t* file_count, gboolean show_hidden_files) {
     DIR* dir;
     struct dirent* entry;
     size_t count = 0;
@@ -37,6 +37,11 @@ GListStore* get_files_in_directory(const char* directory, size_t* file_count) {
 
         //Skip "." and ".." directories (idk what those are)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        // Skip hidden files if flag is off
+        if (!show_hidden_files && entry->d_name[0] == '.') {
             continue;
         }
 

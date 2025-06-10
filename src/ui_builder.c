@@ -467,7 +467,7 @@ GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) 
     return popover;
 }
 
-GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window) {
+GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window, gboolean show_hidden_files) {
     GMenu *menu = g_menu_new();
 
     //
@@ -534,6 +534,12 @@ GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *win
     GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
     gtk_widget_insert_action_group(GTK_WIDGET(popover), "win", G_ACTION_GROUP(window));
     g_object_unref(menu);
+
+    GMenuItem *toggle_hidden_item = g_menu_item_new("Show Hidden Files", "win.toggle_hidden");
+    g_menu_item_set_attribute_value(toggle_hidden_item, "attribute::action-enabled", g_variant_new_boolean(TRUE));
+    g_menu_item_set_attribute_value(toggle_hidden_item, "attribute::state", g_variant_new_boolean(show_hidden_files));
+    g_menu_append_item(menu, toggle_hidden_item);
+    g_object_unref(toggle_hidden_item);
 
     return popover;
 }

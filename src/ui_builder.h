@@ -76,7 +76,7 @@ toolbar_t create_toolbar(const char* default_directory);
 
 GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window);
 
-GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window);
+GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window, gboolean show_hidden_files);
 
 dialog_t create_dialog(const char* title, const char* message);
 

@@ -10,7 +10,7 @@
  * @param file_count Pointer to store the number of files found
  * @return Array of file_t structures (must be freed by the caller)
  */
-GListStore* get_files_in_directory(const char* directory, size_t* file_count);
+GListStore* get_files_in_directory(const char* directory, size_t* file_count, gboolean show_hidden_files);
 
 /**
  * Gets an array of currently selected items from a GtkGridView

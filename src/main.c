@@ -16,6 +16,7 @@ GtkWidget *notebook;
 GtkWidget *search_entry;
 
 const char *default_directory = "/home"; // Default directory to start in
+gboolean show_hidden_files = FALSE;
 
 // Function declarations
 void file_clicked(GtkGridView *view, guint position, gpointer user_data);
@@ -87,6 +88,8 @@ void on_sort_date_desc(GSimpleAction *action, GVariant *param, gpointer user_dat
 void on_sort_size_asc(GSimpleAction *action, GVariant *param, gpointer user_data);
 
 void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 typedef struct {
     gboolean ascending;
@@ -186,6 +189,13 @@ static void init(GtkApplication *app, gpointer user_data) {
 
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), window);
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_entries, G_N_ELEMENTS(win_entries), window);
+
+    //
+    // Show hidden toggle
+    //
+    GSimpleAction *toggle_action = g_simple_action_new_stateful("toggle_hidden", NULL, g_variant_new_boolean(show_hidden_files));
+    g_signal_connect(toggle_action, "change-state", G_CALLBACK(toggle_hidden_action_handler), NULL);
+    g_action_map_add_action(G_ACTION_MAP(window), G_ACTION(toggle_action));
 
     //
     // File Container Area — using notebook now
@@ -408,7 +418,7 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
     ctx->current_directory = g_strdup(directory);
 
     size_t file_count = 0;
-    GListStore *files = get_files_in_directory(directory, &file_count);
+    GListStore* files = get_files_in_directory(directory, &file_count, show_hidden_files);
     if (!files) return;
 
     // Save the raw file store in context
@@ -545,7 +555,7 @@ void populate_files_with_filter(const char *filter) {
     if (!ctx || !ctx->current_directory) return;
 
     size_t file_count = 0;
-    GListStore *raw_files = get_files_in_directory(ctx->current_directory, &file_count);
+    GListStore *raw_files = get_files_in_directory(ctx->current_directory, &file_count, show_hidden_files);
     if (!raw_files) return;
 
     // Prepare filtered list
@@ -670,7 +680,7 @@ void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, do
 
     TabContext *ctx = user_data;
 
-    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window);
+    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window, show_hidden_files);
     gtk_widget_set_parent(GTK_WIDGET(popover), ctx->scrolled_window);
     const GdkRectangle rect = { (int)x, (int)y, 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
@@ -876,7 +886,7 @@ void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
 
     TabContext *ctx = get_current_tab_context();
 
-    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window);
+    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window, show_hidden_files);
     gtk_widget_set_parent(GTK_WIDGET(popover), GTK_WIDGET(button));
     const GdkRectangle rect = { gtk_widget_get_width(GTK_WIDGET(button))/2, gtk_widget_get_height(GTK_WIDGET(button)), 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
@@ -971,6 +981,17 @@ void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_dat
     sort_files_by(FALSE, "size");
 }
 
+static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *state, gpointer user_data) {
+    show_hidden_files = g_variant_get_boolean(state);
+    g_simple_action_set_state(action, state);
+
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) return;
+
+    char *path_copy = g_strdup(ctx->current_directory);
+    populate_files_in_container(path_copy, ctx->scrolled_window, ctx);
+    g_free(path_copy);
+}
 
 int main(int argc, char **argv) {
     GtkApplication *app;
