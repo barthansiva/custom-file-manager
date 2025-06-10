@@ -424,6 +424,12 @@ GtkPopoverMenu* create_file_context_menu(const char* params) {
     g_menu_append_item(menu, rename_item);
     g_object_unref(rename_item);
 
+    // Properties item
+    GMenuItem *properties_item = g_menu_item_new("Properties", "win.properties");
+    g_menu_item_set_action_and_target_value(properties_item, "win.properties", g_variant_new_string(params));
+    g_menu_append_item(menu, properties_item);
+    g_object_unref(properties_item);
+
     GMenuModel *menu_model = G_MENU_MODEL(menu);
 
     // 2. Create the PopoverMenu from the model
@@ -575,7 +581,7 @@ GtkWindow* create_properties_window(const char* file_path) {
     }
 
 
-    GtkWidget* dialog = gtk_window_new(); // Create dialog without buttons initially
+    GtkWidget* dialog = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(dialog), "Properties");
     gtk_widget_set_size_request(dialog, 400, 250);
 

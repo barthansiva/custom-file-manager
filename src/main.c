@@ -40,6 +40,8 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
 
 static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
 static void menu_new_folder_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 static void menu_open_terminal_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
@@ -77,6 +79,7 @@ void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, do
 static const GActionEntry win_actions[] = {
     { "delete", menu_delete_clicked, "s", NULL, NULL },
     { "rename", menu_rename_clicked, "s", NULL, NULL },
+    { "properties", menu_file_properties_clicked, "s", NULL, NULL },
     { "new_folder", menu_new_folder_clicked, "s", NULL, NULL },
     { "open_terminal", menu_open_terminal_clicked, "s", NULL, NULL },
     { "open_in_tab", menu_open_tab_clicked, "s", NULL, NULL },
@@ -745,6 +748,20 @@ void new_folder_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
     reload_current_directory();
 }
 
+static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+
+    const char *params = g_variant_get_string(parameter, NULL);
+    size_t count;
+    char** files = split_basenames(params," ", &count);
+
+    char* path = strdup(files[0]);
+
+    GtkWindow* properties_window = create_properties_window(path);
+    gtk_window_set_transient_for(properties_window, GTK_WINDOW(window));
+    gtk_window_set_modal(properties_window, TRUE);
+
+    gtk_window_present(properties_window);
+}
 
 void undo_button_clicked(GtkButton *button, gpointer user_data) {
     undo_last_operation();
