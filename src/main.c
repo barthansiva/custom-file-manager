@@ -4,6 +4,10 @@
 #include "main.h"
 #include <stdlib.h>
 #include "snake.h"
+#include <glib.h>
+#include <sys/stat.h>
+#include <gio/gio.h>
+#include <glib/gdatetime.h>
 
 GtkWidget *window;
 GtkWidget *main_file_container;
@@ -37,6 +41,18 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
 void undo_button_clicked(GtkButton *button, gpointer user_data);
 
 void redo_button_clicked(GtkButton *button, gpointer user_data);
+
+void on_settings_button_clicked(GtkButton *button, gpointer user_data);
+
+void on_new_folder_clicked(GtkButton *button, gpointer user_data);
+
+void on_open_in_tab_clicked(GtkButton *button, gpointer user_data);
+
+void on_properties_clicked(GtkButton *button, gpointer user_data);
+
+void on_sort_by_clicked(GtkButton *button, gpointer user_data);
+
+void on_open_terminal_clicked(GtkButton *button, gpointer user_data);
 
 static const GActionEntry win_actions[] = {
     { "delete", menu_delete_clicked, "s", NULL, NULL }
@@ -105,6 +121,14 @@ static void init(GtkApplication *app, gpointer user_data) {
 
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
+
+    //
+    // Settings
+    //
+    GtkWidget *settings_button = gtk_button_new_from_icon_name("open-menu-symbolic");
+    gtk_widget_set_tooltip_text(settings_button, "Settings");
+    g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_button_clicked), NULL);
+    gtk_box_append(GTK_BOX(toolbar.toolbar), settings_button);
 
     //
     // File Container Area — using notebook now
@@ -605,6 +629,230 @@ void redo_button_clicked(GtkButton *button, gpointer user_data) {
     if (redo_last_undo()) {
         reload_current_directory();
     }
+}
+
+void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
+    GtkWidget *popover = gtk_popover_new();
+    gtk_widget_set_parent(GTK_WIDGET(popover), GTK_WIDGET(button));
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+
+    GtkWidget *new_folder = gtk_button_new_with_label("New Folder");
+    GtkWidget *open_tab = gtk_button_new_with_label("Open in New Tab");
+    GtkWidget *properties = gtk_button_new_with_label("Properties");
+    GtkWidget *sort_by = gtk_button_new_with_label("Sort By");
+    GtkWidget *open_terminal = gtk_button_new_with_label("Open in Terminal");
+
+    gtk_box_append(GTK_BOX(box), new_folder);
+    gtk_box_append(GTK_BOX(box), open_tab);
+    gtk_box_append(GTK_BOX(box), properties);
+    gtk_box_append(GTK_BOX(box), sort_by);
+    gtk_box_append(GTK_BOX(box), open_terminal);
+
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+    // gtk_widget_show(popover); // Removed this deprecated line
+    gtk_popover_popup(GTK_POPOVER(popover)); // Use this to show the popover
+    // might also want to connect a signal to position the popover correctly
+    // or use gtk_popover_set_pointing_to if i have a specific widget/area to point to.
+
+
+    // Connect signals
+    g_signal_connect(new_folder, "clicked", G_CALLBACK(on_new_folder_clicked), NULL);
+    g_signal_connect(open_tab, "clicked", G_CALLBACK(on_open_in_tab_clicked), NULL);
+    g_signal_connect(properties, "clicked", G_CALLBACK(on_properties_clicked), NULL);
+    g_signal_connect(sort_by, "clicked", G_CALLBACK(on_sort_by_clicked), NULL);
+    g_signal_connect(open_terminal, "clicked", G_CALLBACK(on_open_terminal_clicked), NULL);
+}
+
+void on_new_folder_clicked(GtkButton *button, gpointer user_data) {
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) return;
+
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/New Folder", ctx->current_directory);
+    if (g_mkdir(path, 0755) != 0) {
+        g_warning("Could not create folder: %s", path);
+    } else {
+        populate_files_in_container(ctx->current_directory, main_file_container, ctx);
+    }
+}
+
+void on_open_in_tab_clicked(GtkButton *button, gpointer user_data) {
+    TabContext *ctx = get_current_tab_context();
+    if (ctx && ctx->current_directory) {
+        add_tab_with_directory(ctx->current_directory);
+    }
+}
+
+// Helper function for adding rows to the properties dialog grid (converted from lambda)
+static void add_property_row(GtkWidget *grid_widget, const char *label_text, const char *value_text, int row) {
+    GtkWidget *label = gtk_label_new(label_text);
+    gtk_widget_set_halign(label, GTK_ALIGN_END); // Align labels to the right
+    gtk_grid_attach(GTK_GRID(grid_widget), label, 0, row, 1, 1);
+
+    GtkWidget *value_label = gtk_label_new(value_text);
+    gtk_widget_set_halign(value_label, GTK_ALIGN_START); // Align values to the left
+    gtk_label_set_selectable(GTK_LABEL(value_label), TRUE); // Allow selecting text
+    gtk_label_set_wrap(GTK_LABEL(value_label), TRUE); // Wrap long text
+    gtk_grid_attach(GTK_GRID(grid_widget), value_label, 1, row, 1, 1);
+}
+
+void on_properties_clicked(GtkButton *button, gpointer user_data) {
+    GtkPopover *popover = GTK_POPOVER(user_data); // Cast user_data to GtkPopover
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) {
+        gtk_popover_popdown(popover);
+        return;
+    }
+
+    GFile *file = g_file_new_for_path(ctx->current_directory);
+    if (!file) {
+        g_warning("Could not create GFile for path: %s", ctx->current_directory);
+        gtk_popover_popdown(popover);
+        return;
+    }
+
+    GError *error = NULL;
+    GFileInfo *info = g_file_query_info(
+        file,
+        G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+        G_FILE_ATTRIBUTE_STANDARD_SIZE ","
+        G_FILE_ATTRIBUTE_TIME_MODIFIED ","
+        G_FILE_ATTRIBUTE_TIME_CREATED ","
+        G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+        G_FILE_QUERY_INFO_NONE,
+        NULL,
+        &error
+    );
+
+    if (error) {
+        g_warning("Error querying file info for %s: %s", ctx->current_directory, error->message);
+        g_error_free(error);
+        g_object_unref(file);
+        gtk_popover_popdown(popover);
+        return;
+    }
+
+    char *kind_str = NULL;
+    char *size_str = NULL;
+    char *created_str = NULL;
+    char *modified_str = NULL;
+
+    GFileType file_type = g_file_info_get_file_type(info);
+    switch (file_type) {
+        case G_FILE_TYPE_REGULAR: {
+            const char *content_type = g_file_info_get_content_type(info);
+            kind_str = g_strdup_printf("File (%s)", content_type ? content_type : "unknown");
+            break;
+        }
+        case G_FILE_TYPE_DIRECTORY:
+            kind_str = g_strdup("Directory");
+            break;
+        case G_FILE_TYPE_SYMBOLIC_LINK:
+            kind_str = g_strdup("Symbolic Link");
+            break;
+        case G_FILE_TYPE_SPECIAL:
+            kind_str = g_strdup("Special File");
+            break;
+        default:
+            kind_str = g_strdup("Unknown");
+            break;
+    }
+
+    goffset file_size = g_file_info_get_size(info);
+    size_str = g_strdup_printf("%lld bytes", (long long)file_size);
+    if (file_size >= (1LL << 30)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f GB", (double)file_size / (1LL << 30));
+    } else if (file_size >= (1LL << 20)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f MB", (double)file_size / (1LL << 20));
+    } else if (file_size >= (1LL << 10)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f KB", (double)file_size / (1LL << 10));
+    }
+
+    guint64 created_unix = g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_CREATED);
+    if (created_unix != 0) {
+        GDateTime *dt_created = g_date_time_new_from_unix_local(created_unix);
+        created_str = g_date_time_format(dt_created, "%Y-%m-%d %H:%M:%S");
+        g_date_time_unref(dt_created);
+    } else {
+        created_str = g_strdup("N/A");
+    }
+
+    guint64 modified_unix = g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+    if (modified_unix != 0) {
+        GDateTime *dt_modified = g_date_time_new_from_unix_local(modified_unix);
+        modified_str = g_date_time_format(dt_modified, "%Y-%m-%d %H:%M:%S");
+        g_date_time_unref(dt_modified);
+    } else {
+        modified_str = g_strdup("N/A");
+    }
+
+    // Modern GTK4 dialog creation and display
+    GtkWidget *dialog = gtk_dialog_new(); // Create dialog without buttons initially
+    gtk_window_set_title(GTK_WINDOW(dialog), "Properties");
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window)); // Set main window as parent
+    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE); // Make the dialog modal
+    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 250);
+
+    // Create a GtkBox for the dialog content area
+    GtkWidget *content_area = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_vexpand(content_area, TRUE);
+    gtk_widget_set_hexpand(content_area, TRUE);
+    gtk_window_set_child(GTK_WINDOW(dialog), content_area); // Set this box as the main child of the dialog window
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+    gtk_widget_set_margin_start(grid, 20);
+    gtk_widget_set_margin_end(grid, 20);
+    gtk_widget_set_margin_top(grid, 20);
+    gtk_widget_set_margin_bottom(grid, 20);
+    gtk_box_append(GTK_BOX(content_area), grid); // Add the grid to the dialog's content area
+
+    // Use the helper function to add properties to the grid
+    add_property_row(grid, "Path:", ctx->current_directory, 0);
+    add_property_row(grid, "Kind:", kind_str, 1);
+    add_property_row(grid, "Size:", size_str, 2);
+    add_property_row(grid, "Created:", created_str, 3);
+    add_property_row(grid, "Modified:", modified_str, 4);
+
+    gtk_widget_set_visible(grid, TRUE); // Ensure the grid content is visible
+
+    // Add an "OK" button to the dialog's action area
+    GtkWidget *ok_button = gtk_button_new_with_label("OK");
+    gtk_widget_set_halign(ok_button, GTK_ALIGN_END); // Align the button to the end (right)
+    gtk_dialog_add_action_widget(GTK_DIALOG(dialog), ok_button, GTK_RESPONSE_OK); // Add button with a response ID
+
+    // Connect to the "response" signal to destroy the dialog when a button is clicked
+    g_signal_connect(dialog, "response", G_CALLBACK(gtk_window_destroy), NULL);
+
+    gtk_widget_set_visible(dialog, TRUE); // Show the dialog
+
+    g_free(kind_str);
+    g_free(size_str);
+    g_free(created_str);
+    g_free(modified_str);
+    g_object_unref(info);
+    g_object_unref(file);
+
+    gtk_popover_popdown(popover); // Close the settings popover
+}
+
+void on_sort_by_clicked(GtkButton *button, gpointer user_data) {
+    // Placeholder, integrate later with actual sorting mechanism
+    g_print("Sort by clicked.\n");
+}
+
+void on_open_terminal_clicked(GtkButton *button, gpointer user_data) {
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->current_directory) return;
+
+    char command[PATH_MAX + 50];
+    snprintf(command, sizeof(command), "gnome-terminal --working-directory='%s'", ctx->current_directory);
+    system(command);
 }
 
 int main(int argc, char **argv) {
