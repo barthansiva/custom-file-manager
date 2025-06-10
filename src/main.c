@@ -166,6 +166,7 @@ void file_clicked(GtkGridView *view, const guint position, const gpointer user_d
         const char *path = g_file_get_path(file);
         populate_files_in_container(path, ctx->scrolled_window, ctx);
     } else {
+        open_file_with_default_app(file);
         GFileInfo *full_info = g_file_query_info(file,
             G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
             G_FILE_QUERY_INFO_NONE, NULL, NULL);
@@ -382,6 +383,45 @@ void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
     }
 }
 
+/**
+ * uses GTK standard function to open files with default program,
+ * complains if there is no default program
+ * @param file
+ */
+void open_file_with_default_app(GFile *file) {
+    GError *error = NULL;
+    GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                                        G_FILE_QUERY_INFO_NONE, NULL, &error);
+
+    // catch for if no file info is found
+    if (!info) {
+        g_warning("Could not get file info: %s", error->message);
+        g_error_free(error);
+        return;
+    }
+
+    // this gets the identifying type of the file
+    const char *content_type = g_file_info_get_content_type(info);
+    GAppInfo *app_info = g_app_info_get_default_for_type(content_type, FALSE);
+    if (!app_info) {
+        g_warning("wdym: %s", content_type);
+        g_object_unref(info);
+        return;
+    }
+
+    // this stops the program from crashing when using an invalid file (I tried this with an .fbx file bc it's
+    // the most obscure one I had on hand)
+    GList *files = g_list_prepend(NULL, file);
+    if (!g_app_info_launch(app_info, files, NULL, &error)) {
+        g_warning("Failed to launch file: %s", error->message);
+        g_error_free(error);
+    }
+
+    // Return used memory
+    g_list_free(files);
+    g_object_unref(app_info);
+    g_object_unref(info);
+}
 
 
 /**

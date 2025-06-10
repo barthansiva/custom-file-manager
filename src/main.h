@@ -14,6 +14,8 @@ typedef struct {
     GtkWidget *preview_revealer;
 } TabContext;
 
+void open_file_with_default_app(GFile *file);
+
 TabContext* get_current_tab_context();
 
 gboolean populate_files(const char *directory);
