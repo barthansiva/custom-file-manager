@@ -432,3 +432,181 @@ GtkPopoverMenu* create_file_context_menu(const char* params) {
 
     return popover;
 }
+
+GtkPopoverMenu* create_directory_context_menu(const char* params) {
+    GMenu *menu = g_menu_new();
+
+    //
+    // Add items to the menu
+    //
+
+    // New Folder item
+    GMenuItem *folder_item = g_menu_item_new("New Folder", "win.new_folder");
+    g_menu_item_set_action_and_target_value(folder_item, "win.new_folder", g_variant_new_string(params));
+    g_menu_append_item(menu, folder_item);
+    g_object_unref(folder_item);
+
+    // Open in Tab item
+    GMenuItem *tab_item = g_menu_item_new("Open in New Tab", "win.open_in_tab");
+    g_menu_item_set_action_and_target_value(tab_item, "win.open_in_tab", g_variant_new_string(params));
+    g_menu_append_item(menu, tab_item);
+    g_object_unref(tab_item);
+
+    // Open in Terminal item
+    GMenuItem *terminal_item = g_menu_item_new("Open in Terminal", "win.open_terminal");
+    g_menu_item_set_action_and_target_value(terminal_item, "win.open_terminal", g_variant_new_string(params));
+    g_menu_append_item(menu, terminal_item);
+    g_object_unref(terminal_item);
+
+    // Sort by item
+    GMenuItem *sort_item = g_menu_item_new("Sort by", "win.sort_dir");
+    g_menu_item_set_action_and_target_value(sort_item, "win.sort_dir", g_variant_new_string(params));
+    g_menu_append_item(menu, sort_item);
+    g_object_unref(sort_item);
+
+    // Properties item
+    GMenuItem *properties_item = g_menu_item_new("Properties", "win.dir_properties");
+    g_menu_item_set_action_and_target_value(properties_item, "win.dir_properties", g_variant_new_string(params));
+    g_menu_append_item(menu, properties_item);
+    g_object_unref(properties_item);
+
+    GMenuModel *menu_model = G_MENU_MODEL(menu);
+
+    // 2. Create the PopoverMenu from the model
+    GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
+    g_object_unref(menu);
+
+    return popover;
+}
+
+static void add_property_row(GtkWidget *grid_widget, const char *label_text, const char *value_text, int row) {
+    GtkWidget *label = gtk_label_new(label_text);
+    gtk_widget_set_halign(label, GTK_ALIGN_END); // Align labels to the right
+    gtk_grid_attach(GTK_GRID(grid_widget), label, 0, row, 1, 1);
+
+    GtkWidget *value_label = gtk_label_new(value_text);
+    gtk_widget_set_halign(value_label, GTK_ALIGN_START); // Align values to the left
+    gtk_label_set_selectable(GTK_LABEL(value_label), TRUE); // Allow selecting text
+    gtk_label_set_wrap(GTK_LABEL(value_label), TRUE); // Wrap long text
+    gtk_grid_attach(GTK_GRID(grid_widget), value_label, 1, row, 1, 1);
+}
+
+GtkWindow* create_properties_window(const char* file_path) {
+
+    GFile *file = g_file_new_for_path(file_path);
+    if (!file) {
+        g_error("Could not create GFile for path: %s", file_path);
+    }
+
+    GError *error = NULL;
+    GFileInfo *info = g_file_query_info(
+        file,
+        G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+        G_FILE_ATTRIBUTE_STANDARD_SIZE ","
+        G_FILE_ATTRIBUTE_TIME_MODIFIED ","
+        G_FILE_ATTRIBUTE_TIME_CREATED ","
+        G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+        G_FILE_QUERY_INFO_NONE,
+        NULL,
+        &error
+    );
+
+    if (error) {
+        g_error("Error querying file info for %s: %s", file_path, error->message);
+        g_error_free(error);
+        g_object_unref(file);
+    }
+
+    char *kind_str = NULL;
+    char *size_str = NULL;
+    char *created_str = NULL;
+    char *modified_str = NULL;
+
+    GFileType file_type = g_file_info_get_file_type(info);
+    switch (file_type) {
+        case G_FILE_TYPE_REGULAR: {
+            const char *content_type = g_file_info_get_content_type(info);
+            kind_str = g_strdup_printf("File (%s)", content_type ? content_type : "unknown");
+            break;
+        }
+        case G_FILE_TYPE_DIRECTORY:
+            kind_str = g_strdup("Directory");
+            break;
+        case G_FILE_TYPE_SYMBOLIC_LINK:
+            kind_str = g_strdup("Symbolic Link");
+            break;
+        case G_FILE_TYPE_SPECIAL:
+            kind_str = g_strdup("Special File");
+            break;
+        default:
+            kind_str = g_strdup("Unknown");
+            break;
+    }
+
+    goffset file_size = g_file_info_get_size(info);
+    size_str = g_strdup_printf("%lld bytes", (long long)file_size);
+    if (file_size >= (1LL << 30)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f GB", (double)file_size / (1LL << 30));
+    } else if (file_size >= (1LL << 20)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f MB", (double)file_size / (1LL << 20));
+    } else if (file_size >= (1LL << 10)) {
+        g_free(size_str);
+        size_str = g_strdup_printf("%.2f KB", (double)file_size / (1LL << 10));
+    }
+
+    guint64 created_unix = g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_CREATED);
+    if (created_unix != 0) {
+        GDateTime *dt_created = g_date_time_new_from_unix_local(created_unix);
+        created_str = g_date_time_format(dt_created, "%Y-%m-%d %H:%M:%S");
+        g_date_time_unref(dt_created);
+    } else {
+        created_str = g_strdup("N/A");
+    }
+
+    guint64 modified_unix = g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+    if (modified_unix != 0) {
+        GDateTime *dt_modified = g_date_time_new_from_unix_local(modified_unix);
+        modified_str = g_date_time_format(dt_modified, "%Y-%m-%d %H:%M:%S");
+        g_date_time_unref(dt_modified);
+    } else {
+        modified_str = g_strdup("N/A");
+    }
+
+
+    GtkWidget* dialog = gtk_window_new(); // Create dialog without buttons initially
+    gtk_window_set_title(GTK_WINDOW(dialog), "Properties");
+    gtk_widget_set_size_request(dialog, 400, 250);
+
+    // Create a GtkBox for the dialog content area
+    GtkWidget *content_area = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_vexpand(content_area, TRUE);
+    gtk_widget_set_hexpand(content_area, TRUE);
+    gtk_window_set_child(GTK_WINDOW(dialog), content_area); // Set this box as the main child of the dialog window
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 10);
+    gtk_widget_set_margin_start(grid, 20);
+    gtk_widget_set_margin_end(grid, 20);
+    gtk_widget_set_margin_top(grid, 20);
+    gtk_widget_set_margin_bottom(grid, 20);
+    gtk_box_append(GTK_BOX(content_area), grid); // Add the grid to the dialog's content area
+
+    // Use the helper function to add properties to the grid
+    add_property_row(grid, "Path:", file_path, 0);
+    add_property_row(grid, "Kind:", kind_str, 1);
+    add_property_row(grid, "Size:", size_str, 2);
+    add_property_row(grid, "Created:", created_str, 3);
+    add_property_row(grid, "Modified:", modified_str, 4);
+
+    g_free(kind_str);
+    g_free(size_str);
+    g_free(created_str);
+    g_free(modified_str);
+    g_object_unref(info);
+    g_object_unref(file);
+
+    return GTK_WINDOW(dialog);
+}
