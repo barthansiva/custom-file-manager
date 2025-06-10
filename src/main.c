@@ -74,6 +74,24 @@ void close_dialog_window(GtkEntry* self, gpointer data1, gpointer data2);
 
 void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
 
+void sort_files_by(gboolean ascending, const char *criteria);
+
+void on_sort_name_asc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+void on_sort_name_desc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+void on_sort_date_asc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+void on_sort_date_desc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+void on_sort_size_asc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_data);
+
+typedef struct {
+    gboolean ascending;
+} SortContext;
+
 
 
 static const GActionEntry win_actions[] = {
@@ -83,10 +101,17 @@ static const GActionEntry win_actions[] = {
     { "new_folder", menu_new_folder_clicked, "s", NULL, NULL },
     { "open_terminal", menu_open_terminal_clicked, "s", NULL, NULL },
     { "open_in_tab", menu_open_tab_clicked, "s", NULL, NULL },
-    { "dir_properties", menu_dir_properties_clicked, "s", NULL, NULL },
-    { "sort_dir", menu_sort_dir_clicked, "s", NULL, NULL }
+    { "dir_properties", menu_dir_properties_clicked, "s", NULL, NULL }
 };
 
+static const GActionEntry win_entries[] = {
+    { "sort_name_asc",  on_sort_name_asc,  NULL, NULL, NULL },
+    { "sort_name_desc", on_sort_name_desc, NULL, NULL, NULL },
+    { "sort_date_asc",  on_sort_date_asc,  NULL, NULL, NULL },
+    { "sort_date_desc", on_sort_date_desc, NULL, NULL, NULL },
+    { "sort_size_asc",  on_sort_size_asc,  NULL, NULL, NULL },
+    { "sort_size_desc", on_sort_size_desc, NULL, NULL, NULL },
+};
 /**
  * Builds the core widget structure of the application
  * @param app The GtkApplication instance
@@ -158,6 +183,9 @@ static void init(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_tooltip_text(settings_button, "Settings");
     g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_button_clicked), NULL);
     gtk_box_append(GTK_BOX(toolbar.toolbar), settings_button);
+
+    g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), window);
+    g_action_map_add_action_entries(G_ACTION_MAP(window), win_entries, G_N_ELEMENTS(win_entries), window);
 
     //
     // File Container Area — using notebook now
@@ -375,35 +403,48 @@ void add_tab_with_directory(const char* path) {
  */
 
 void populate_files_in_container(const char *directory, GtkWidget *container, TabContext *ctx) {
-    ctx->current_directory = g_strdup(directory);  // Update current path (replace strdup from before)
+    // Clean up old data
+    g_clear_pointer(&ctx->current_directory, g_free);
+    ctx->current_directory = g_strdup(directory);
 
     size_t file_count = 0;
     GListStore *files = get_files_in_directory(directory, &file_count);
     if (!files) return;
 
-    GtkMultiSelection *selection = gtk_multi_selection_new(G_LIST_MODEL(files));
+    // Save the raw file store in context
+    ctx->file_store = files;
+
+    // Create a GtkSortListModel wrapping the file store
+    GtkSortListModel *sort_model = gtk_sort_list_model_new(G_LIST_MODEL(files), NULL);
+    gtk_sort_list_model_set_incremental(sort_model, FALSE); // full sorting
+
+    ctx->sort_model = sort_model;
+
+    // Set up selection and factory
+    GtkMultiSelection *selection = gtk_multi_selection_new(G_LIST_MODEL(sort_model));
     GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
     g_signal_connect(factory, "setup", G_CALLBACK(setup_file_item), NULL);
     g_signal_connect(factory, "bind", G_CALLBACK(bind_file_item), NULL);
 
+    // Create the grid view
     GtkWidget *view = gtk_grid_view_new(GTK_SELECTION_MODEL(selection), factory);
     gtk_grid_view_set_single_click_activate(GTK_GRID_VIEW(view), FALSE);
 
-    // Important: Set file click handler
+    // Save the view in context
+    ctx->file_list_view = GTK_LIST_VIEW(view);
+
+    // Set click and right-click handlers
     g_signal_connect(view, "activate", G_CALLBACK(file_clicked), ctx);
 
-    // Add right-click gesture controller
     GtkGesture *right_click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);  // Right mouse button
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(right_click), GDK_BUTTON_SECONDARY);
     gtk_widget_add_controller(view, GTK_EVENT_CONTROLLER(right_click));
     g_signal_connect(right_click, "released", G_CALLBACK(directory_right_clicked), ctx);
 
     // Swap in the new view
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(container), view);
 
-    // Update context path + tab label
-    g_free(ctx->current_directory);
-    ctx->current_directory = g_strdup(directory);
+    // Update path and tab label
     gtk_editable_set_text(GTK_EDITABLE(directory_entry), ctx->current_directory);
     gtk_label_set_text(GTK_LABEL(ctx->tab_label), g_path_get_basename(directory));
 }
@@ -617,7 +658,7 @@ void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double 
         g_free(selected_files);
     }
 
-    GtkPopoverMenu* popover = create_file_context_menu(params);
+    GtkPopoverMenu* popover = create_file_context_menu(params, window);
     gtk_widget_set_parent(GTK_WIDGET(popover), box);
     const GdkRectangle rect = { gtk_widget_get_width(box)/2, gtk_widget_get_height(box), 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
@@ -629,7 +670,7 @@ void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, do
 
     TabContext *ctx = user_data;
 
-    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory);
+    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window);
     gtk_widget_set_parent(GTK_WIDGET(popover), ctx->scrolled_window);
     const GdkRectangle rect = { (int)x, (int)y, 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
@@ -835,12 +876,101 @@ void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
 
     TabContext *ctx = get_current_tab_context();
 
-    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory);
+    GtkPopoverMenu* popover = create_directory_context_menu(ctx->current_directory, window);
     gtk_widget_set_parent(GTK_WIDGET(popover), GTK_WIDGET(button));
     const GdkRectangle rect = { gtk_widget_get_width(GTK_WIDGET(button))/2, gtk_widget_get_height(GTK_WIDGET(button)), 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
     gtk_popover_popup(GTK_POPOVER(popover));
 }
+
+gint compare_by_name(gconstpointer a, gconstpointer b, gpointer user_data) {
+    const char *name_a = g_file_get_basename(G_FILE(a));
+    const char *name_b = g_file_get_basename(G_FILE(b));
+    int result = g_ascii_strcasecmp(name_a, name_b);
+    SortContext *ctx = (SortContext *)user_data;
+    return ctx->ascending ? result : -result;
+}
+
+
+gint compare_by_date(gconstpointer a, gconstpointer b, gpointer user_data) {
+    GFileInfo *info_a = g_file_query_info(G_FILE(a), G_FILE_ATTRIBUTE_TIME_MODIFIED, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+    GFileInfo *info_b = g_file_query_info(G_FILE(b), G_FILE_ATTRIBUTE_TIME_MODIFIED, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+    if (!info_a || !info_b) {
+        if (info_a) g_object_unref(info_a);
+        if (info_b) g_object_unref(info_b);
+        return 0;
+    }
+    guint64 mod_a = g_file_info_get_attribute_uint64(info_a, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+    guint64 mod_b = g_file_info_get_attribute_uint64(info_b, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+    g_object_unref(info_a);
+    g_object_unref(info_b);
+    gint result = (mod_a > mod_b) - (mod_a < mod_b);
+    SortContext *ctx = (SortContext *)user_data;
+    return ctx->ascending ? result : -result;
+}
+
+
+gint compare_by_size(gconstpointer a, gconstpointer b, gpointer user_data) {
+    GFileInfo *info_a = g_file_query_info(G_FILE(a), G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+    GFileInfo *info_b = g_file_query_info(G_FILE(b), G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+    if (!info_a || !info_b) {
+        if (info_a) g_object_unref(info_a);
+        if (info_b) g_object_unref(info_b);
+        return 0;
+    }
+    goffset size_a = g_file_info_get_size(info_a);
+    goffset size_b = g_file_info_get_size(info_b);
+    g_object_unref(info_a);
+    g_object_unref(info_b);
+    gint result = (size_a > size_b) - (size_a < size_b);
+    SortContext *ctx = (SortContext *)user_data;
+    return ctx->ascending ? result : -result;
+}
+
+
+void sort_files_by(gboolean ascending, const char *criteria) {
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->file_store || !ctx->file_list_view || !ctx->sort_model) return;
+
+    GtkSorter *sorter = NULL;
+    SortContext *sort_ctx = g_new(SortContext, 1);
+    sort_ctx->ascending = ascending;
+
+    if (g_strcmp0(criteria, "name") == 0) {
+        sorter = gtk_custom_sorter_new(compare_by_name, sort_ctx, g_free);
+    } else if (g_strcmp0(criteria, "date") == 0) {
+        sorter = gtk_custom_sorter_new(compare_by_date, sort_ctx, g_free);
+    } else if (g_strcmp0(criteria, "size") == 0) {
+        sorter = gtk_custom_sorter_new(compare_by_size, sort_ctx, g_free);
+    } else {
+        g_free(sort_ctx);
+        return;
+    }
+
+    gtk_sort_list_model_set_sorter(ctx->sort_model, sorter);
+    g_object_unref(sorter);
+}
+
+
+void on_sort_name_asc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(TRUE, "name");
+}
+void on_sort_name_desc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(FALSE, "name");
+}
+void on_sort_date_asc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(TRUE, "date");
+}
+void on_sort_date_desc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(FALSE, "date");
+}
+void on_sort_size_asc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(TRUE, "size");
+}
+void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_data) {
+    sort_files_by(FALSE, "size");
+}
+
 
 int main(int argc, char **argv) {
     GtkApplication *app;

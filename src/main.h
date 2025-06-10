@@ -12,6 +12,9 @@ typedef struct {
     char *current_directory;
     GtkWidget *preview_text_view;
     GtkWidget *preview_revealer;
+    GtkListView *file_list_view;
+    GtkSortListModel *sort_model;
+    GListStore *file_store;
 } TabContext;
 
 void open_file_with_default_app(GFile *file);

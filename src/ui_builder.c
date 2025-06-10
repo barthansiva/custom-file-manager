@@ -405,7 +405,7 @@ dialog_t create_dialog(const char* title, const char* message) {
     return dialog;
 }
 
-GtkPopoverMenu* create_file_context_menu(const char* params) {
+GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) {
     GMenu *menu = g_menu_new();
 
     //
@@ -430,16 +430,44 @@ GtkPopoverMenu* create_file_context_menu(const char* params) {
     g_menu_append_item(menu, properties_item);
     g_object_unref(properties_item);
 
+    //
+    // SORT SUBMENU
+    //
+    GMenu *sort_menu = g_menu_new();
+    const char *sort_actions[] = {
+        "win.sort_name_asc",
+        "win.sort_name_desc",
+        "win.sort_date_asc",
+        "win.sort_date_desc",
+        "win.sort_size_asc",
+        "win.sort_size_desc"
+    };
+    const char *sort_labels[] = {
+        "Name Ascending",
+        "Name Descending",
+        "Date Ascending",
+        "Date Descending",
+        "Size Ascending",
+        "Size Descending"
+    };
+
+    for (int i = 0; i < 6; i++) {
+        GMenuItem *item = g_menu_item_new(sort_labels[i], sort_actions[i]);
+        g_menu_append_item(sort_menu, item);
+        g_object_unref(item);
+    }
+
     GMenuModel *menu_model = G_MENU_MODEL(menu);
 
     // 2. Create the PopoverMenu from the model
     GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
+    gtk_widget_insert_action_group(GTK_WIDGET(popover), "win", G_ACTION_GROUP(window));
     g_object_unref(menu);
 
     return popover;
 }
 
-GtkPopoverMenu* create_directory_context_menu(const char* params) {
+GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window) {
     GMenu *menu = g_menu_new();
 
     //
@@ -465,10 +493,34 @@ GtkPopoverMenu* create_directory_context_menu(const char* params) {
     g_object_unref(terminal_item);
 
     // Sort by item
-    GMenuItem *sort_item = g_menu_item_new("Sort by", "win.sort_dir");
-    g_menu_item_set_action_and_target_value(sort_item, "win.sort_dir", g_variant_new_string(params));
-    g_menu_append_item(menu, sort_item);
-    g_object_unref(sort_item);
+    GMenu *sort_menu = g_menu_new();
+    const char *sort_actions[] = {
+        "win.sort_name_asc",
+        "win.sort_name_desc",
+        "win.sort_date_asc",
+        "win.sort_date_desc",
+        "win.sort_size_asc",
+        "win.sort_size_desc"
+    };
+    const char *sort_labels[] = {
+        "Name Ascending",
+        "Name Descending",
+        "Date Ascending",
+        "Date Descending",
+        "Size Ascending",
+        "Size Descending"
+    };
+
+    for (int i = 0; i < 6; i++) {
+        GMenuItem *item = g_menu_item_new(sort_labels[i], sort_actions[i]);
+        g_menu_append_item(sort_menu, item);
+        g_object_unref(item);
+    }
+
+    GMenuItem *sort_submenu = g_menu_item_new_submenu("Sort by", G_MENU_MODEL(sort_menu));
+    g_menu_append_item(menu, sort_submenu);
+    g_object_unref(sort_submenu);
+    g_object_unref(sort_menu);
 
     // Properties item
     GMenuItem *properties_item = g_menu_item_new("Properties", "win.dir_properties");
@@ -480,6 +532,7 @@ GtkPopoverMenu* create_directory_context_menu(const char* params) {
 
     // 2. Create the PopoverMenu from the model
     GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
+    gtk_widget_insert_action_group(GTK_WIDGET(popover), "win", G_ACTION_GROUP(window));
     g_object_unref(menu);
 
     return popover;
