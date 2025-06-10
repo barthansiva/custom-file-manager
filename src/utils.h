@@ -25,9 +25,10 @@ GFile** get_selection(GtkGridView* view, size_t* count);
  * @param files Array of GFile objects
  * @param count Number of files in the array
  * @param separator String to use as separator between basenames
- * @return A newly-allocated string containing joined basenames (must be freed by caller)
+ * @param file_path Path to use as the first element in the returned string
+ * @return A newly-allocated string containing the provided path and joined basenames (must be freed by caller)
  */
-char* join_basenames(GFile** files, size_t count, const char* separator);
+char* join_basenames(GFile** files, size_t count, const char* separator, const char* file_path);
 
 /**
  * Splits a string of basenames into an array of individual basename strings
@@ -117,6 +118,20 @@ void add_operation_to_history(operation_t operation);
  * Should be called once at program start
  */
 void init_operation_history();
+
+/**
+ * Gets the directory path component of a file path
+ * @param file_path Full path to a file
+ * @return A newly-allocated string containing the directory path (must be freed by caller)
+ */
+char* get_directory(const char* file_path);
+
+/**
+ * Gets the basename (filename) component of a file path
+ * @param file_path Full path to a file
+ * @return A newly-allocated string containing the basename (must be freed by caller)
+ */
+char* get_basename(const char* file_path);
 
 /**
  * Clean up operation history system resources

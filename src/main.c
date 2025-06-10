@@ -38,6 +38,8 @@ void tab_changed(GtkNotebook* self, GtkWidget* page, guint page_num, gpointer us
 
 static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
 void undo_button_clicked(GtkButton *button, gpointer user_data);
 
 void redo_button_clicked(GtkButton *button, gpointer user_data);
@@ -54,8 +56,13 @@ void on_sort_by_clicked(GtkButton *button, gpointer user_data);
 
 void on_open_terminal_clicked(GtkButton *button, gpointer user_data);
 
+void file_rename_confirm(GtkEntry* self, gpointer data1, gpointer data2);
+
+void close_dialog_window(GtkEntry* self, gpointer data1, gpointer data2);
+
 static const GActionEntry win_actions[] = {
-    { "delete", menu_delete_clicked, "s", NULL, NULL }
+    { "delete", menu_delete_clicked, "s", NULL, NULL },
+    { "rename", menu_rename_clicked, "s", NULL, NULL }
 };
 
 /**
@@ -568,16 +575,17 @@ void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double 
     GtkGridView* view = GTK_GRID_VIEW(gtk_widget_get_first_child(get_current_tab_context()->scrolled_window));
     GFile** selected_files = get_selection(view, &count);
 
+    GtkListItem *list_item = GTK_LIST_ITEM(g_object_get_data(G_OBJECT(box), "list-item"));
+    GFile *file = G_FILE(gtk_list_item_get_item(list_item));
+
     char* params;
     if (count == 0) {
-        GtkListItem *list_item = GTK_LIST_ITEM(g_object_get_data(G_OBJECT(box), "list-item"));
-        GFile *file = G_FILE(gtk_list_item_get_item(list_item));
 
         params = g_file_get_path(file);
 
         g_object_unref(file);
     }else {
-        params = join_basenames(selected_files, count, " ");
+        params = join_basenames(selected_files, count, " ", g_file_get_path(file));
         g_free(selected_files);
     }
 
@@ -597,7 +605,7 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
         delete_file(files[0]);
     } else {
         // Extract directory path from the first element
-        char *dir_path = strdup(files[0]);
+        char *dir_path = strdup(get_directory(files[0]));
 
         // Loop through remaining files (starting from index 1)
         for (size_t i = 1; i < count; i++) {
@@ -619,16 +627,64 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
     reload_current_directory();
 }
 
-void undo_button_clicked(GtkButton *button, gpointer user_data) {
-    if (undo_last_operation()) {
-        reload_current_directory();
+static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+
+    const char *params = g_variant_get_string(parameter, NULL);
+    size_t count;
+    char** files = split_basenames(params," ", &count);
+    dialog_t dialog = create_dialog("Rename File", "Enter new name for the file:");
+
+    gtk_window_set_transient_for(GTK_WINDOW(dialog.dialog), GTK_WINDOW(window));
+    gtk_window_set_modal(GTK_WINDOW(dialog.dialog), TRUE);
+
+    char* path = strdup(files[0]);
+
+    g_print(path);
+    gtk_editable_set_text(GTK_EDITABLE(dialog.entry), get_basename(path));
+    g_signal_connect(GTK_WIDGET(dialog.entry), "icon-press", G_CALLBACK(file_rename_confirm), path);
+    g_signal_connect(GTK_WIDGET(dialog.entry), "activate", G_CALLBACK(file_rename_confirm), path);
+
+    g_signal_connect(GTK_WIDGET(dialog.entry), "icon-press", G_CALLBACK(close_dialog_window), dialog.dialog);
+    g_signal_connect(GTK_WIDGET(dialog.entry), "activate", G_CALLBACK(close_dialog_window), dialog.dialog);
+
+    gtk_window_present(GTK_WINDOW(dialog.dialog));
+}
+
+void close_dialog_window(GtkEntry* self, gpointer data1, gpointer data2) {
+    GtkWindow* dialog_window = data2 ? data2 : data1;
+
+    gtk_window_close(dialog_window);
+    gtk_window_destroy(dialog_window);
+}
+
+void file_rename_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
+    char* src = data2 ? data2 : data1;
+    const char *new_name = gtk_editable_get_text(GTK_EDITABLE(self));
+    if (new_name == NULL || strlen(new_name) == 0) {
+        g_free(src);
+        return; // No new name provided
     }
+    // Get the directory of the source file
+    char *dir = get_directory(strdup(src));
+    // Construct the new file path
+    char *new_path = g_build_filename(dir, new_name, NULL);
+    // Free the directory path
+    g_free(dir);
+    // Move the file to the new path
+    move_file(src, new_path);
+
+    reload_current_directory();
+}
+
+
+void undo_button_clicked(GtkButton *button, gpointer user_data) {
+    undo_last_operation();
+    reload_current_directory();
 }
 
 void redo_button_clicked(GtkButton *button, gpointer user_data) {
-    if (redo_last_undo()) {
-        reload_current_directory();
-    }
+    redo_last_undo();
+    reload_current_directory();
 }
 
 void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
@@ -667,13 +723,14 @@ void on_new_folder_clicked(GtkButton *button, gpointer user_data) {
     TabContext *ctx = get_current_tab_context();
     if (!ctx || !ctx->current_directory) return;
 
-    char path[PATH_MAX];
-    snprintf(path, sizeof(path), "%s/New Folder", ctx->current_directory);
-    if (g_mkdir(path, 0755) != 0) {
-        g_warning("Could not create folder: %s", path);
-    } else {
-        populate_files_in_container(ctx->current_directory, main_file_container, ctx);
-    }
+    // char path[PATH_MAX];
+    // snprintf(path, sizeof(path), "%s/New Folder", ctx->current_directory);
+    // g_create
+    // if (g_mkdir(path, 0755) != 0) {
+    //     g_warning("Could not create folder: %s", path);
+    // } else {
+    //     populate_files_in_container(ctx->current_directory, main_file_container, ctx);
+    // }
 }
 
 void on_open_in_tab_clicked(GtkButton *button, gpointer user_data) {

@@ -15,11 +15,24 @@ typedef struct {
     GtkWidget* search_entry;
 } toolbar_t;
 
+/**
+ * Struct to hold the left box widgets
+ * This contains the side panel with undo/redo buttons
+ */
 typedef struct {
     GtkWidget* side_panel;
     GtkButton* undo_button;
     GtkButton* redo_button;
 } left_box_t;
+
+/**
+ * Struct to hold the dialog widgets
+ * This contains the dialog window and entry for user input
+ */
+typedef struct {
+    GtkWindow* dialog;
+    GtkEntry* entry;
+} dialog_t;
 
 /**
  * Sets up a list item factory for displaying files in a list.
@@ -62,5 +75,7 @@ void set_context(TabContext* ctx);
 toolbar_t create_toolbar(const char* default_directory);
 
 GtkPopoverMenu* create_file_context_menu(const char* params);
+
+dialog_t create_dialog(const char* title, const char* message);
 
 #endif //UI_BUILDER_H

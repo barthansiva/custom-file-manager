@@ -373,6 +373,38 @@ toolbar_t create_toolbar(const char* default_directory) {
     return toolbar;
 }
 
+dialog_t create_dialog(const char* title, const char* message) {
+    dialog_t dialog;
+
+    //Window
+    dialog.dialog = GTK_WINDOW(gtk_window_new());
+    gtk_window_set_title(dialog.dialog, title);
+    gtk_widget_set_size_request(GTK_WIDGET(dialog.dialog), 400, 100);
+
+    //Container
+    GtkBox* vbox = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING*2));
+    gtk_widget_set_margin_start(GTK_WIDGET(vbox), SPACING*2);
+    gtk_widget_set_margin_end(GTK_WIDGET(vbox), SPACING*2);
+    gtk_widget_set_margin_top(GTK_WIDGET(vbox), SPACING*2);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(vbox), SPACING*2);
+
+    // Label
+    GtkWidget* label = gtk_label_new(message);
+    gtk_widget_set_vexpand(label, TRUE);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+
+    //Entry
+    dialog.entry = GTK_ENTRY(gtk_entry_new());
+    gtk_entry_set_icon_from_icon_name(dialog.entry,GTK_ENTRY_ICON_SECONDARY, "object-select-symbolic");
+
+    // Adding children
+    gtk_box_append(vbox, label);
+    gtk_box_append(vbox, GTK_WIDGET(dialog.entry));
+    gtk_window_set_child(dialog.dialog, GTK_WIDGET(vbox));
+
+    return dialog;
+}
+
 GtkPopoverMenu* create_file_context_menu(const char* params) {
     GMenu *menu = g_menu_new();
 
@@ -385,6 +417,12 @@ GtkPopoverMenu* create_file_context_menu(const char* params) {
     g_menu_item_set_action_and_target_value(delete_item, "win.delete", g_variant_new_string(params));
     g_menu_append_item(menu, delete_item);
     g_object_unref(delete_item);
+
+    // Rename item
+    GMenuItem *rename_item = g_menu_item_new("Rename", "win.rename");
+    g_menu_item_set_action_and_target_value(rename_item, "win.rename", g_variant_new_string(params));
+    g_menu_append_item(menu, rename_item);
+    g_object_unref(rename_item);
 
     GMenuModel *menu_model = G_MENU_MODEL(menu);
 

@@ -380,13 +380,13 @@ GFile** get_selection(GtkGridView* view, size_t* count) {
 
 /**
  * Joins basenames from an array of GFile objects into a single string
- * The first element in the string is the parent directory path of the first file
  * @param files Array of GFile objects
  * @param count Number of files in the array
- * @param separator String to use as separator between path and basenames
- * @return A newly-allocated string containing parent path and joined basenames (must be freed by caller)
+ * @param separator String to use as separator between basenames
+ * @param file_path Path to use as the first element in the returned string
+ * @return A newly-allocated string containing the provided path and joined basenames (must be freed by caller)
  */
-char* join_basenames(GFile** files, size_t count, const char* separator) {
+char* join_basenames(GFile** files, size_t count, const char* separator, const char* file_path) {
     g_return_val_if_fail(files != NULL && count > 0 && separator != NULL, NULL);
 
     // Initial string buffer
@@ -396,20 +396,12 @@ char* join_basenames(GFile** files, size_t count, const char* separator) {
         return NULL;
     }
 
-    // First, add the parent directory path of the first file
-    if (files[0]) {
-        GFile *parent = g_file_get_parent(files[0]);
-        if (parent) {
-            char *parent_path = g_file_get_path(parent);
-            if (parent_path) {
-                g_string_append(result, parent_path);
-                g_free(parent_path);
-            }
-            g_object_unref(parent);
+    // First, add the provided file path
+    if (file_path) {
+        g_string_append(result, file_path);
 
-            // Add separator after the path
-            g_string_append(result, separator);
-        }
+        // Add separator after the path
+        g_string_append(result, separator);
     }
 
     // Process each file
@@ -505,7 +497,7 @@ gboolean undo_delete_file(operation_t operation) {
 
     // Find the file in trash that matches our original path
     g_autoptr(GFile) trashed_file = NULL;
-    g_autoptr(GFileInfo) info = NULL;
+    g_autoptr(GFileInfo) info;
 
     while ((info = g_file_enumerator_next_file(enumerator, NULL, NULL)) != NULL) {
         g_autofree char *trash_orig_path =
@@ -751,4 +743,66 @@ gboolean redo_last_undo(void) {
             g_warning("Cannot redo operation of unknown or invalid type: %d", fwd_op->type);
             return FALSE;
     }
+}
+
+/**
+ * Gets the directory path component of a file path
+ * @param file_path Full path to a file
+ * @return A newly-allocated string containing the directory path (must be freed by caller)
+ */
+char* get_directory(const char* file_path) {
+    if (file_path == NULL) {
+        return NULL;
+    }
+
+    // Create a GFile object for the provided path
+    GFile* file = g_file_new_for_path(file_path);
+    if (!file) {
+        return g_strdup(".");
+    }
+
+    // Get the parent directory as a GFile
+    GFile* parent = g_file_get_parent(file);
+
+    // If there's no parent (e.g., for "/" or a relative path with no directory component)
+    if (!parent) {
+        g_object_unref(file);
+        return g_strdup(".");
+    }
+
+    // Get the path of the parent directory
+    char* directory = g_file_get_path(parent);
+
+    // Clean up GFile objects
+    g_object_unref(file);
+    g_object_unref(parent);
+
+    // If we couldn't get the path for some reason
+    if (!directory) {
+        return g_strdup(".");
+    }
+
+    return directory;
+}
+
+/**
+ * Gets the basename (filename) component of a file path
+ * @param file_path Full path to a file
+ * @return A newly-allocated string containing the basename (must be freed by caller)
+ */
+char* get_basename(const char* file_path) {
+    if (file_path == NULL) {
+        return NULL;
+    }
+
+    // Find the last occurrence of '/'
+    const char* last_slash = strrchr(file_path, '/');
+
+    // If there's no slash, the entire path is the basename
+    if (last_slash == NULL) {
+        return g_strdup(file_path);
+    }
+
+    // Otherwise, return everything after the last slash
+    return g_strdup(last_slash + 1);
 }
