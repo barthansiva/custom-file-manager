@@ -333,6 +333,7 @@ toolbar_t create_toolbar(const char* default_directory) {
 
     // Create the "Up" button
     toolbar.up_button = gtk_button_new_from_icon_name("go-up-symbolic");
+    gtk_widget_set_tooltip_text(toolbar.up_button, "Go to Parent Directory");
 
     // Create the directory entry
     toolbar.directory_entry = gtk_entry_new();

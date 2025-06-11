@@ -183,7 +183,7 @@ static void init(GtkApplication *app, gpointer user_data) {
     // Settings
     //
     GtkWidget *settings_button = gtk_button_new_from_icon_name("open-menu-symbolic");
-    gtk_widget_set_tooltip_text(settings_button, "Settings");
+    gtk_widget_set_tooltip_text(settings_button, "Folder context menu");
     g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_button_clicked), NULL);
     gtk_box_append(GTK_BOX(toolbar.toolbar), settings_button);
 
@@ -246,9 +246,9 @@ void file_clicked(GtkGridView *view, const guint position, const gpointer user_d
     TabContext *ctx = (TabContext *)user_data;
 
     GtkSelectionModel *model = gtk_grid_view_get_model(view);
-    GListStore *files = G_LIST_STORE(gtk_multi_selection_get_model(GTK_MULTI_SELECTION(model)));
+    GListModel *files = G_LIST_MODEL(gtk_multi_selection_get_model(GTK_MULTI_SELECTION(model)));
 
-    GFile *file = g_list_model_get_item(G_LIST_MODEL(files), position);
+    GFile *file = g_list_model_get_item(files, position);
     GFileInfo *info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileType type = g_file_info_get_file_type(info);
 
@@ -441,7 +441,7 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
     gtk_grid_view_set_single_click_activate(GTK_GRID_VIEW(view), FALSE);
 
     // Save the view in context
-    ctx->file_list_view = GTK_LIST_VIEW(view);
+    ctx->file_grid_view = GTK_GRID_VIEW(view);
 
     // Set click and right-click handlers
     g_signal_connect(view, "activate", G_CALLBACK(file_clicked), ctx);
@@ -651,20 +651,35 @@ void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double 
     GtkWidget *box = GTK_WIDGET(user_data);
 
     size_t count;
-    GtkGridView* view = GTK_GRID_VIEW(gtk_widget_get_first_child(get_current_tab_context()->scrolled_window));
+    // Get the current tab context
+    TabContext *ctx = get_current_tab_context();
+    if (!ctx || !ctx->file_grid_view) {
+        g_warning("Invalid tab context or scrolled window");
+        return;
+    }
+
+    GtkGridView* view = ctx->file_grid_view;
     GFile** selected_files = get_selection(view, &count);
 
     GtkListItem *list_item = GTK_LIST_ITEM(g_object_get_data(G_OBJECT(box), "list-item"));
+    if (!list_item) {
+        g_warning("Invalid list item");
+        if (selected_files) g_free(selected_files);
+        return;
+    }
+
     GFile *file = G_FILE(gtk_list_item_get_item(list_item));
+    if (!file) {
+        g_warning("Invalid file");
+        if (selected_files) g_free(selected_files);
+        return;
+    }
 
     char* params;
     if (count == 0) {
-
         params = g_file_get_path(file);
-
-        g_object_unref(file);
-    }else {
-        params = join_basenames(selected_files, count, " ", g_file_get_path(file));
+    } else {
+        params = join_basenames(selected_files, count, ";", g_file_get_path(file));
         g_free(selected_files);
     }
 
@@ -673,7 +688,6 @@ void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double 
     const GdkRectangle rect = { gtk_widget_get_width(box)/2, gtk_widget_get_height(box), 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
     gtk_popover_popup(GTK_POPOVER(popover));
-
 }
 
 void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
@@ -690,7 +704,7 @@ void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, do
 static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const char *params = g_variant_get_string(parameter, NULL);
     size_t count;
-    char** files = split_basenames(params," ", &count);
+    char** files = split_basenames(params,";", &count);
     if (count == 1) {
         delete_file(files[0]);
     } else {
@@ -721,7 +735,7 @@ static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpoi
 
     const char *params = g_variant_get_string(parameter, NULL);
     size_t count;
-    char** files = split_basenames(params," ", &count);
+    char** files = split_basenames(params,";", &count);
     dialog_t dialog = create_dialog("Rename File", "Enter new name for the file:");
 
     gtk_window_set_transient_for(GTK_WINDOW(dialog.dialog), GTK_WINDOW(window));
@@ -803,7 +817,7 @@ static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parame
 
     const char *params = g_variant_get_string(parameter, NULL);
     size_t count;
-    char** files = split_basenames(params," ", &count);
+    char** files = split_basenames(params,";", &count);
 
     char* path = strdup(files[0]);
 
@@ -940,18 +954,18 @@ gint compare_by_size(gconstpointer a, gconstpointer b, gpointer user_data) {
 
 void sort_files_by(gboolean ascending, const char *criteria) {
     TabContext *ctx = get_current_tab_context();
-    if (!ctx || !ctx->file_store || !ctx->file_list_view || !ctx->sort_model) return;
+    if (!ctx || !ctx->file_store || !ctx->file_grid_view || !ctx->sort_model) return;
 
     GtkSorter *sorter = NULL;
     SortContext *sort_ctx = g_new(SortContext, 1);
     sort_ctx->ascending = ascending;
 
     if (g_strcmp0(criteria, "name") == 0) {
-        sorter = gtk_custom_sorter_new(compare_by_name, sort_ctx, g_free);
+        sorter = GTK_SORTER(gtk_custom_sorter_new(compare_by_name, sort_ctx, g_free));
     } else if (g_strcmp0(criteria, "date") == 0) {
-        sorter = gtk_custom_sorter_new(compare_by_date, sort_ctx, g_free);
+        sorter = GTK_SORTER(gtk_custom_sorter_new(compare_by_date, sort_ctx, g_free));
     } else if (g_strcmp0(criteria, "size") == 0) {
-        sorter = gtk_custom_sorter_new(compare_by_size, sort_ctx, g_free);
+        sorter = GTK_SORTER(gtk_custom_sorter_new(compare_by_size, sort_ctx, g_free));
     } else {
         g_free(sort_ctx);
         return;

@@ -337,7 +337,7 @@ GFile** get_selection(GtkGridView* view, size_t* count) {
     }
 
     // Get the list model containing the actual items
-    GListStore *files = G_LIST_STORE(gtk_multi_selection_get_model(GTK_MULTI_SELECTION(selection_model)));
+    GListModel *files = G_LIST_MODEL(gtk_multi_selection_get_model(GTK_MULTI_SELECTION(selection_model)));
     if (!files) {
         g_warning("Failed to get list store from selection model");
         gtk_bitset_unref(selection);
@@ -367,7 +367,7 @@ GFile** get_selection(GtkGridView* view, size_t* count) {
     if (gtk_bitset_iter_init_first(&iter, selection, &pos)) {
         do {
             // Get item at this position and add to our array
-            GFile *file = g_list_model_get_item(G_LIST_MODEL(files), pos);
+            GFile *file = g_list_model_get_item(files, pos);
             if (file) {
                 selected_files[index++] = file;
             }
