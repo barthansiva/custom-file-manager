@@ -171,8 +171,6 @@ gboolean delete_file(const char* path) {
     // Make a copy of path for history data as the original path might be freed after deletion
     char *path_copy = g_strdup(path);
 
-    g_print("Deleting file: %s\n", path_copy);
-
     // Attempt to delete the file
     gboolean success = g_file_trash(file, NULL, &error);
     if (!success) {
@@ -503,7 +501,7 @@ gboolean undo_delete_file(operation_t operation) {
 
     // Find the file in trash that matches our original path
     g_autoptr(GFile) trashed_file = NULL;
-    g_autoptr(GFileInfo) info;
+    GFileInfo* info;
 
     while ((info = g_file_enumerator_next_file(enumerator, NULL, NULL)) != NULL) {
         g_autofree char *trash_orig_path =
@@ -541,7 +539,6 @@ gboolean undo_delete_file(operation_t operation) {
         return FALSE;
     }
 
-    g_print("Successfully restored file: %s\n", orig_path);
     return TRUE;
 }
 
@@ -641,7 +638,6 @@ gboolean undo_last_operation(void) {
         // Note: we don't free data because we moved it to forward_op
         g_array_remove_index(operation_history, operation_history->len - 1);
 
-        g_print("Operation undone successfully\n");
     } else {
         // Free the copied data if undo failed
         if (forward_op.data) {
@@ -1046,6 +1042,5 @@ gboolean undo_paste_file(operation_t operation) {
     g_object_unref(dest_file);
     g_print("Successfully undid paste operation by deleting %s\n", paths->dest_path);
 
-    reload_current_directory();
     return TRUE;
 }
