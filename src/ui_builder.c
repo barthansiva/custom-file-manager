@@ -431,6 +431,13 @@ GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) 
     g_menu_append_item(menu, properties_item);
     g_object_unref(properties_item);
 
+    // Preview item
+    GMenuItem *preview_item = g_menu_item_new("Preview", "win.preview");
+    g_menu_item_set_action_and_target_value(preview_item, "win.preview", g_variant_new_string(params));
+    g_menu_append_item(menu, preview_item);
+    g_object_unref(preview_item);
+
+
     //
     // SORT SUBMENU
     //

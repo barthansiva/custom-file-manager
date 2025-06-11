@@ -91,6 +91,8 @@ void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_dat
 
 static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
+static void menu_preview_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
 typedef struct {
     gboolean ascending;
 } SortContext;
@@ -101,6 +103,7 @@ static const GActionEntry win_actions[] = {
     { "delete", menu_delete_clicked, "s", NULL, NULL },
     { "rename", menu_rename_clicked, "s", NULL, NULL },
     { "properties", menu_file_properties_clicked, "s", NULL, NULL },
+    { "preview", menu_preview_clicked, "s", NULL, NULL },
     { "new_folder", menu_new_folder_clicked, "s", NULL, NULL },
     { "open_terminal", menu_open_terminal_clicked, "s", NULL, NULL },
     { "open_in_tab", menu_open_tab_clicked, "s", NULL, NULL },
@@ -258,19 +261,6 @@ void file_clicked(GtkGridView *view, const guint position, const gpointer user_d
         populate_files_in_container(path, ctx->scrolled_window, ctx);
     } else {
         open_file_with_default_app(file);
-        GFileInfo *full_info = g_file_query_info(file,
-            G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-            G_FILE_QUERY_INFO_NONE, NULL, NULL);
-
-        if (full_info) {
-            const char *mime = g_file_info_get_content_type(full_info);
-            if (g_str_has_prefix(mime, "text/")) {
-                update_preview_text(ctx, file);
-            } else {
-                gtk_revealer_set_reveal_child(GTK_REVEALER(ctx->preview_revealer), FALSE);
-            }
-            g_object_unref(full_info);
-        }
     }
 
     g_object_unref(file);
@@ -1005,6 +995,31 @@ static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *state,
     char *path_copy = g_strdup(ctx->current_directory);
     populate_files_in_container(path_copy, ctx->scrolled_window, ctx);
     g_free(path_copy);
+}
+
+static void menu_preview_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    const char *file_path = g_variant_get_string(parameter, NULL);
+    if (!file_path) return;
+
+    GFile *file = g_file_new_for_path(file_path);
+
+    GFileInfo *info = g_file_query_info(file,
+        G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+        G_FILE_QUERY_INFO_NONE, NULL, NULL);
+
+    if (!info) {
+        g_object_unref(file);
+        return;
+    }
+
+    const char *mime = g_file_info_get_content_type(info);
+    if (g_str_has_prefix(mime, "text/")) {
+        TabContext *ctx = get_current_tab_context();
+        update_preview_text(ctx, file);
+    }
+
+    g_object_unref(info);
+    g_object_unref(file);
 }
 
 int main(int argc, char **argv) {
