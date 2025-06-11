@@ -939,6 +939,17 @@ static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parame
     gtk_window_present(properties_window);
 }
 
+/**
+ * @brief Copies selected files to the clipboard.
+ *
+ * Processes a list of selected files from the file manager interface and adds them
+ * to the system clipboard for later pasting. Handles both single file and multi-file
+ * selections using the provided parameter string.
+ *
+ * @param action The GSimpleAction that triggered the callback.
+ * @param parameter GVariant string containing one or more file paths.
+ * @param user_data Pointer to the parent window.
+ */
 static void menu_copy_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
 
     const char *params = g_variant_get_string(parameter, NULL);
@@ -974,6 +985,17 @@ static void menu_copy_clicked(GSimpleAction *action, GVariant *parameter, gpoint
     g_strfreev(files);
 }
 
+/**
+ * @brief Pastes files from the clipboard into the specified directory.
+ *
+ * Retrieves any files previously copied to the clipboard and copies them
+ * to the target directory. After pasting, the current directory view is
+ * refreshed to show the new files.
+ *
+ * @param action The GSimpleAction that triggered the callback.
+ * @param parameter GVariant string representing the target directory path.
+ * @param user_data Pointer to the parent window.
+ */
 static void menu_paste_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
 
     const gchar* dir = g_variant_get_string(parameter, NULL);
