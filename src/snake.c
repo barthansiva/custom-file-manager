@@ -1,4 +1,3 @@
-// snake.c
 #include "snake.h"
 #include <stdlib.h>
 #include <time.h>
@@ -51,13 +50,11 @@ static gboolean snake_tick(gpointer user_data) {
     new_head->next = snake;
     snake = new_head;
 
-    // Check wall collision
     if (snake->x < 0 || snake->x >= WIDTH || snake->y < 0 || snake->y >= HEIGHT) {
         reset_game();
         return G_SOURCE_CONTINUE;
     }
 
-    // Check self collision
     Segment *s = snake->next;
     while (s) {
         if (s->x == snake->x && s->y == snake->y) {
@@ -87,16 +84,14 @@ static gboolean snake_tick(gpointer user_data) {
 }
 
 static void on_snake_draw(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data) {
-    // Clear
+
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_paint(cr);
 
-    // Draw food
     cairo_set_source_rgb(cr, 1, 0, 0);
     cairo_rectangle(cr, food_x * CELL_SIZE, food_y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
     cairo_fill(cr);
 
-    // Draw snake
     cairo_set_source_rgb(cr, 0, 1, 0);
     Segment *s = snake;
     while (s) {
@@ -121,7 +116,6 @@ static void on_snake_window_close(GtkWindow *window, gpointer user_data) {
         g_source_remove(game_timeout_id);
         game_timeout_id = 0;
     }
-    // Now allow the window to close normally:
     gtk_window_destroy(window);
 }
 
