@@ -669,7 +669,7 @@ void update_preview_text(TabContext *ctx, GFile *file) {
 void reload_current_directory() {
     TabContext *ctx = get_current_tab_context();
     if (ctx && ctx->current_directory) {
-        populate_files_in_container(ctx->current_directory, ctx->scrolled_window, ctx);
+        populate_files_in_container(strdup(ctx->current_directory), ctx->scrolled_window, ctx);
     }
 }
 
@@ -1281,9 +1281,7 @@ static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *state,
     TabContext *ctx = get_current_tab_context();
     if (!ctx || !ctx->current_directory) return;
 
-    char *path_copy = g_strdup(ctx->current_directory);
-    populate_files_in_container(path_copy, ctx->scrolled_window, ctx);
-    g_free(path_copy);
+    reload_current_directory();
 }
 
 /**
