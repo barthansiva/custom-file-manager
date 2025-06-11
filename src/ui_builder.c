@@ -4,7 +4,14 @@
 #include <stdlib.h>
 
 /**
- * Callback for g_file_query_info_async that sets the icon for the image widget of a file item.
+ * @brief Callback for async file info queries, used to set file icons.
+ *
+ * Sets the GIcon for a file item asynchronously once its file info is retrieved.
+ * Called by `g_file_query_info_async()` in `bind_file_item()`.
+ *
+ * @param source_object The GFile that was queried.
+ * @param res The result of the async operation.
+ * @param user_data GtkImage widget to receive the icon.
  */
 static void on_file_info_ready(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     GFile *file = G_FILE(source_object);
@@ -23,12 +30,14 @@ static void on_file_info_ready(GObject *source_object, GAsyncResult *res, gpoint
 }
 
 /**
- * Sets up a list item factory for displaying files in a list.
- * This function is called when the factory is created.
- * It sets up the structure of each file item in the list. (only the structure, not the data)
+ * @brief Callback for async file info queries, used to set file icons.
  *
- * @param factory The GtkListItemFactory to set up
- * @param list_item The GtkListItem to set up
+ * Sets the GIcon for a file item asynchronously once its file info is retrieved.
+ * Called by `g_file_query_info_async()` in `bind_file_item()`.
+ *
+ * @param source_object The GFile that was queried.
+ * @param res The result of the async operation.
+ * @param user_data GtkImage widget to receive the icon.
  */
 void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
@@ -36,10 +45,7 @@ void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
     gtk_widget_set_focusable(box, TRUE);
 
-    //
     // Creating icon
-    //
-
     GtkWidget *icon = gtk_image_new();
     gtk_box_append(GTK_BOX(box), icon);
 
@@ -49,10 +55,7 @@ void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     gtk_widget_set_halign(icon, GTK_ALIGN_FILL);
     gtk_widget_set_valign(icon, GTK_ALIGN_FILL);
 
-    //
     // Creating label
-    //
-
     GtkWidget *label = gtk_label_new("");
     gtk_label_set_max_width_chars(GTK_LABEL(label), 15); //max width
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END); //for some reason this is the syntax to set it to truncate after max width
@@ -71,12 +74,13 @@ void setup_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
 
 /**
- * Binds data to a list item factory for displaying files in a list.
- * This function is called when the factory is used to create a list item.
- * It updates the contents of the file item with the actual file data. (that way the same structure can be reused for different files)
+ * @brief Binds file-specific data to a file list item.
  *
- * @param factory The GtkListItemFactory to set up
- * @param list_item The GtkListItem to set up
+ * Connects gestures, sets label text and icon dynamically for each file.
+ * Called for each file shown in the view using the same layout from `setup_file_item()`.
+ *
+ * @param factory The factory (unused here).
+ * @param list_item The list item to bind data to.
  */
 void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 
@@ -114,9 +118,12 @@ void bind_file_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
- * Bints Bogos (amazing comments btw)
- * @param factory
- * @param list_item
+ * @brief Sets up the layout for a directory entry in the sidebar.
+ *
+ * Adds a left-aligned label to display the directory name.
+ *
+ * @param factory The list item factory.
+ * @param list_item The list item to set up.
  */
 void setup_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     // This should set up the, well, directories in the sidebar
@@ -128,9 +135,12 @@ void setup_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
- * Binds binted Bogos
- * @param factory
- * @param list_item
+ * @brief Binds the directory name to a sidebar list item.
+ *
+ * Extracts the name from GFileInfo and sets it on the label.
+ *
+ * @param factory The list item factory.
+ * @param list_item The list item to bind data to.
  */
 void bind_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
     GFileInfo *file_info = G_FILE_INFO(gtk_list_item_get_item(list_item));
@@ -141,9 +151,12 @@ void bind_dir_item(GtkListItemFactory *factory, GtkListItem *list_item) {
 }
 
 /**
- * This is responsible for creating additional rows when unfolding directories
- * @param file
- * @return
+ * @brief Creates a collapsible sidebar row for a directory.
+ *
+ * Includes an arrow icon and label, handles click gestures for expanding/collapsing.
+ *
+ * @param file GFile representing the directory.
+ * @return GtkWidget containing the sidebar row.
  */
 static GtkWidget* create_directory_row(GFile *file) {
     GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -181,12 +194,15 @@ static GtkWidget* create_directory_row(GFile *file) {
 }
 
 /**
- * Handles the sidebar directories being clicked
- * @param gesture
- * @param n_press
- * @param x
- * @param y
- * @param user_data
+ * @brief Handles clicks on sidebar directory rows.
+ *
+ * Expands/collapses child directories. Populates child rows and loads file view for clicked dir.
+ *
+ * @param gesture The gesture controller that triggered the event.
+ * @param n_press Number of clicks.
+ * @param x X coordinate.
+ * @param y Y coordinate.
+ * @param user_data Pointer to the row GtkWidget.
  */
 static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
     GtkWidget *row_box = GTK_WIDGET(user_data);
@@ -244,9 +260,11 @@ static void on_directory_row_clicked(GtkGestureClick *gesture, int n_press, doub
 }
 
 /**
- * guh
- * Creates the widget structure for the side panel
- * @return GtkWidget* containing the side panel
+ * @brief Builds the left side panel (sidebar) with undo/redo and directory list.
+ *
+ * Creates a vertical layout including buttons and a list of root-level directories.
+ *
+ * @return Struct containing the sidebar GtkBox and buttons.
  */
 left_box_t create_left_box() {
 
@@ -321,9 +339,12 @@ left_box_t create_left_box() {
 
 
 /**
- * Creates a toolbar with navigation controls
- * @param default_directory Initial directory to display
- * @return Toolbar struct containing all toolbar widgets
+ * @brief Constructs the top toolbar with navigation and search controls.
+ *
+ * Includes "Up" button, directory entry, and search bar.
+ *
+ * @param default_directory Initial directory shown in the entry.
+ * @return Struct with all toolbar widgets.
  */
 toolbar_t create_toolbar(const char* default_directory) {
     toolbar_t toolbar;
@@ -374,6 +395,15 @@ toolbar_t create_toolbar(const char* default_directory) {
     return toolbar;
 }
 
+/**
+ * @brief Creates a generic dialog with a label and a text entry.
+ *
+ * Used for actions like rename or new folder creation.
+ *
+ * @param title Dialog window title.
+ * @param message Prompt label inside the dialog.
+ * @return Struct containing the dialog window and entry widget.
+ */
 dialog_t create_dialog(const char* title, const char* message) {
     dialog_t dialog;
 
@@ -406,6 +436,15 @@ dialog_t create_dialog(const char* title, const char* message) {
     return dialog;
 }
 
+/**
+ * @brief Builds a context menu for file actions (delete, rename, preview, properties).
+ *
+ * Includes a submenu for sort options.
+ *
+ * @param params Encoded parameters for the actions (e.g., file path).
+ * @param window Parent window for the popover.
+ * @return Configured GtkPopoverMenu.
+ */
 GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) {
     GMenu *menu = g_menu_new();
 
@@ -467,7 +506,7 @@ GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) 
 
     GMenuModel *menu_model = G_MENU_MODEL(menu);
 
-    // 2. Create the PopoverMenu from the model
+    // Create the PopoverMenu from the model
     GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
     gtk_widget_insert_action_group(GTK_WIDGET(popover), "win", G_ACTION_GROUP(window));
     g_object_unref(menu);
@@ -475,6 +514,17 @@ GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) 
     return popover;
 }
 
+/**
+ * @brief Builds the right-click context menu for directories.
+ *
+ * Includes actions like new folder, open in tab, open terminal, sort submenu,
+ * and toggling hidden files.
+ *
+ * @param params Target directory path.
+ * @param window Parent window to bind action group.
+ * @param show_hidden_files Boolean flag to reflect toggle state.
+ * @return GtkPopoverMenu for the directory.
+ */
 GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *window, gboolean show_hidden_files) {
     GMenu *menu = g_menu_new();
 
@@ -538,7 +588,7 @@ GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *win
 
     GMenuModel *menu_model = G_MENU_MODEL(menu);
 
-    // 2. Create the PopoverMenu from the model
+    // Create the PopoverMenu from the model
     GtkPopoverMenu* popover = GTK_POPOVER_MENU(gtk_popover_menu_new_from_model(menu_model));
     gtk_widget_insert_action_group(GTK_WIDGET(popover), "win", G_ACTION_GROUP(window));
     g_object_unref(menu);
@@ -552,6 +602,16 @@ GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *win
     return popover;
 }
 
+/**
+ * @brief Adds a labeled value row to a GtkGrid.
+ *
+ * Used inside the properties dialog to display metadata.
+ *
+ * @param grid_widget Grid to append to.
+ * @param label_text Label text (left side).
+ * @param value_text Value text (right side).
+ * @param row Row number to insert at.
+ */
 static void add_property_row(GtkWidget *grid_widget, const char *label_text, const char *value_text, int row) {
     GtkWidget *label = gtk_label_new(label_text);
     gtk_widget_set_halign(label, GTK_ALIGN_END); // Align labels to the right
@@ -564,8 +624,15 @@ static void add_property_row(GtkWidget *grid_widget, const char *label_text, con
     gtk_grid_attach(GTK_GRID(grid_widget), value_label, 1, row, 1, 1);
 }
 
+/**
+ * @brief Creates a window displaying file/directory metadata.
+ *
+ * Shows file type, size, creation time, and last modified time.
+ *
+ * @param file_path Full path to the file or directory.
+ * @return GtkWindow containing the properties view.
+ */
 GtkWindow* create_properties_window(const char* file_path) {
-
     GFile *file = g_file_new_for_path(file_path);
     if (!file) {
         g_error("Could not create GFile for path: %s", file_path);

@@ -1,13 +1,11 @@
+#include <stdlib.h>
 #include <gtk/gtk.h>
+#include <glib.h>
+#include <gio/gio.h>
 #include "utils.h"
 #include "ui_builder.h"
 #include "main.h"
-#include <stdlib.h>
 #include "snake.h"
-#include <glib.h>
-#include <sys/stat.h>
-#include <gio/gio.h>
-#include <glib/gdatetime.h>
 
 GtkWidget *window;
 GtkWidget *main_file_container;
@@ -50,8 +48,6 @@ static void menu_open_terminal_clicked(GSimpleAction *action, GVariant *paramete
 static void menu_open_tab_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 static void menu_dir_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
-
-static void menu_sort_dir_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 void undo_button_clicked(GtkButton *button, gpointer user_data);
 
@@ -134,57 +130,41 @@ static void init(GtkApplication *app, gpointer user_data) {
     //Add actions to our window (stupid ass system, I have no idea why it exists)
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), window);
 
-    //
     //  Left side panel
-    //
     left_box_t left_box = create_left_box();
 
     g_signal_connect(left_box.undo_button,"clicked",G_CALLBACK(undo_button_clicked),NULL);
     g_signal_connect(left_box.redo_button,"clicked",G_CALLBACK(redo_button_clicked),NULL);
 
-    //
     //  Main right container
-    //
     GtkWidget *right_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, SPACING);
     gtk_widget_set_margin_top(right_box, SPACING);
     gtk_widget_set_margin_bottom(right_box, SPACING);
     gtk_widget_set_margin_start(right_box, SPACING);
     gtk_widget_set_margin_end(right_box, SPACING);
 
-    //
     // Toolbar
-    //
     toolbar_t toolbar = create_toolbar(default_directory);
 
-    //
     // Search
-    //
     search_entry = toolbar.search_entry;
     g_signal_connect(search_entry, "changed", G_CALLBACK(search_entry_changed), NULL);
 
     // Store directory_entry in the global variable
     directory_entry = toolbar.directory_entry;
 
-    //
     // Tabs
-    //
-
     GtkWidget *add_tab_button = gtk_button_new_from_icon_name("tab-new-symbolic");
     gtk_widget_set_tooltip_text(add_tab_button, "Open new tab");
     gtk_box_append(GTK_BOX(toolbar.toolbar), add_tab_button);
 
     // Connect signal
     g_signal_connect(add_tab_button, "clicked", G_CALLBACK(on_add_tab_clicked), NULL);
-
-    // Connect signals
     g_signal_connect(toolbar.up_button, "clicked", G_CALLBACK(on_up_clicked), NULL);
-
     g_signal_connect(directory_entry, "icon-press", G_CALLBACK(directory_entry_changed), NULL);
     g_signal_connect(directory_entry, "activate", G_CALLBACK(directory_entry_changed), NULL);
 
-    //
     // Settings
-    //
     GtkWidget *settings_button = gtk_button_new_from_icon_name("open-menu-symbolic");
     gtk_widget_set_tooltip_text(settings_button, "Folder context menu");
     g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_button_clicked), NULL);
@@ -193,16 +173,12 @@ static void init(GtkApplication *app, gpointer user_data) {
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), window);
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_entries, G_N_ELEMENTS(win_entries), window);
 
-    //
     // Show hidden toggle
-    //
     GSimpleAction *toggle_action = g_simple_action_new_stateful("toggle_hidden", NULL, g_variant_new_boolean(show_hidden_files));
     g_signal_connect(toggle_action, "change-state", G_CALLBACK(toggle_hidden_action_handler), NULL);
     g_action_map_add_action(G_ACTION_MAP(window), G_ACTION(toggle_action));
 
-    //
     // File Container Area — using notebook now
-    //
     notebook = gtk_notebook_new();
     gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), FALSE);
     g_signal_connect(notebook, "switch-page", G_CALLBACK(tab_changed), NULL);
@@ -214,9 +190,7 @@ static void init(GtkApplication *app, gpointer user_data) {
 
     add_tab_with_directory(default_directory);
 
-    //
     //  Main container
-    //
     GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
 
     gtk_paned_set_start_child(GTK_PANED(hpaned), left_box.side_panel);
@@ -230,20 +204,18 @@ static void init(GtkApplication *app, gpointer user_data) {
 
     // Show the window
     gtk_window_present(GTK_WINDOW(window));
-
-   // populate_files(default_directory);
 }
 
 
 /**
- * Callback function for when a file is double-clicked in the grid view.
- * If the selected file is a directory, the tab's content is replaced with the new directory listing.
+ * @brief Handles double-click or activation on a file item in the grid view.
  *
- * This function works per-tab using the TabContext passed as user_data.
+ * Opens the file with the default app if it's a file, or populates the current tab
+ * with new directory contents if it's a folder. Hides the preview if navigating away.
  *
- * @param view The GtkGridView that was activated
- * @param position The index of the item in the grid that was clicked
- * @param user_data Pointer to the TabContext of the current tab
+ * @param view The GtkGridView where the activation happened.
+ * @param position Index of the clicked item.
+ * @param user_data Pointer to the current TabContext.
  */
 void file_clicked(GtkGridView *view, const guint position, const gpointer user_data) {
     TabContext *ctx = (TabContext *)user_data;
@@ -268,9 +240,14 @@ void file_clicked(GtkGridView *view, const guint position, const gpointer user_d
 }
 
 /**
- * Callback function for when the directory entry is changed
- * @param self The GtkEntry that was changed
- * @param user_data User data passed to the callback (not used here)
+ * @brief Called when the directory entry is activated or changed by the user.
+ *
+ * Validates the path entered by the user and changes the directory accordingly.
+ * If "play/snake" is entered, launches the snake game instead.
+ * If invalid or unchanged, resets the text field to the current directory.
+ *
+ * @param self The GtkEntry being edited.
+ * @param user_data Unused.
  */
 void directory_entry_changed(GtkEntry* self, gpointer user_data) {
     const char *new_directory = gtk_editable_get_text(GTK_EDITABLE(self));
@@ -290,7 +267,10 @@ void directory_entry_changed(GtkEntry* self, gpointer user_data) {
 }
 
 /**
- * Function to go up one directory level
+ * @brief Navigates one directory level up in the current tab.
+ *
+ * Retrieves the parent of the current directory and repopulates the file grid
+ * with its contents. If already at the root or no parent exists, nothing happens.
  */
 void on_up_clicked() {
 
@@ -320,12 +300,13 @@ void on_up_clicked() {
 }
 
 /**
- * Adds a new tab to the notebook, showing the contents of the specified directory.
- * Each tab holds its own GtkScrolledWindow and tracks its state with a TabContext.
+ * @brief Adds a new tab to the notebook displaying the contents of the specified directory.
  *
- * Automatically switches to the newly created tab and sets the tab label to the basename of the path.
+ * Initializes a new TabContext with its own GtkScrolledWindow, preview pane,
+ * and associated state. The tab is labeled with the basename of the directory
+ * and automatically selected.
  *
- * @param path The directory path to load in the new tab
+ * @param path Absolute path of the directory to open in the new tab.
  */
 void add_tab_with_directory(const char* path) {
     TabContext *ctx = g_malloc0(sizeof(TabContext));
@@ -450,23 +431,24 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
 }
 
 /**
- * Callback for the "Add Tab" button.
- * It creates a new tab with the default directory.
+ * @brief Callback triggered when the "Add Tab" button is clicked.
  *
- * @param button The GtkButton that was clicked
- * @param user_data Not used here, but can be used to pass additional data
+ * Opens a new tab using the default directory as the starting point.
+ *
+ * @param button The GtkButton that was clicked.
+ * @param user_data Not used.
  */
 void on_add_tab_clicked(GtkButton *button, gpointer user_data) {
-    // You can use a default or home directory here
     add_tab_with_directory(default_directory);
 }
 
 /**
- * Callback for the close button on a tab.
- * It finds the tab that contains the button and removes it from the notebook.
+ * @brief Callback triggered when the close button on a tab is clicked.
  *
- * @param button The GtkButton that was clicked
- * @param user_data The GtkNotebook containing the tabs
+ * Finds the tab that contains the clicked button and removes it from the notebook.
+ *
+ * @param button The GtkButton that was clicked (close icon).
+ * @param user_data Pointer to the GtkNotebook containing the tabs.
  */
 void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
     GtkNotebook *notebook = GTK_NOTEBOOK(user_data);
@@ -484,9 +466,12 @@ void on_close_tab_clicked(GtkButton *button, gpointer user_data) {
 }
 
 /**
- * uses GTK standard function to open files with default program,
- * complains if there is no default program
- * @param file
+ * @brief Opens the specified file using the system's default application.
+ *
+ * Retrieves the file's MIME type and launches the default application associated
+ * with it. Logs warnings if no application is found or if launching fails.
+ *
+ * @param file GFile representing the file to open.
  */
 void open_file_with_default_app(GFile *file) {
     GError *error = NULL;
@@ -525,10 +510,12 @@ void open_file_with_default_app(GFile *file) {
 
 
 /**
- * Gets the current TabContext based on the currently active tab in the notebook.
- * This function assumes that each tab's content is a GtkScrolledWindow with a TabContext stored in its user data.
+ * @brief Retrieves the TabContext for the currently active tab.
  *
- * @return Pointer to the current TabContext, or NULL if no tab is active.
+ * Each tab stores a TabContext pointer in its user data. This function
+ * fetches and returns it for use in tab-specific operations.
+ *
+ * @return Pointer to TabContext of the active tab, or NULL if none is active.
  */
 TabContext* get_current_tab_context() {
     int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
@@ -540,6 +527,15 @@ TabContext* get_current_tab_context() {
     return g_object_get_data(G_OBJECT(split), "tab_ctx");
 }
 
+
+/**
+ * @brief Populates the file grid with entries that match a given filter string.
+ *
+ * Filters files in the current tab's directory to only those containing the filter
+ * substring in their basename. If no matches are found, the view is left unchanged.
+ *
+ * @param filter String used to filter file basenames (case-sensitive).
+ */
 void populate_files_with_filter(const char *filter) {
     TabContext *ctx = get_current_tab_context();
     if (!ctx || !ctx->current_directory) return;
@@ -590,11 +586,31 @@ void populate_files_with_filter(const char *filter) {
 }
 
 
+/**
+ * @brief Callback triggered when the text in the search entry changes.
+ *
+ * Filters the files in the current tab by matching their names against the query.
+ * Only files containing the query string are shown.
+ *
+ * @param editable The GtkEditable search entry.
+ * @param user_data Not used.
+ */
 void search_entry_changed(GtkEditable *editable, gpointer user_data) {
     const char *query = gtk_editable_get_text(editable);
     populate_files_with_filter(query);
 }
 
+/**
+ * @brief Callback triggered when the active tab in the notebook changes.
+ *
+ * Updates the directory entry to reflect the path of the newly selected tab.
+ * Falls back to the default directory if no context is found.
+ *
+ * @param self The GtkNotebook instance.
+ * @param page The newly selected tab's page widget.
+ * @param page_num Index of the selected tab.
+ * @param user_data Not used.
+ */
 void tab_changed(GtkNotebook* self, GtkWidget* page, const guint page_num, gpointer user_data) {
     const TabContext* ctx = g_object_get_data(G_OBJECT(page), "tab_ctx");
     if (ctx) {
@@ -604,6 +620,15 @@ void tab_changed(GtkNotebook* self, GtkWidget* page, const guint page_num, gpoin
     }
 }
 
+/**
+ * @brief Loads and displays the content of a text file in the preview pane.
+ *
+ * Reads the contents of the file and inserts them into the GtkTextView inside
+ * the preview area. If the file cannot be read, an error message is displayed.
+ *
+ * @param ctx Pointer to the current tab context (TabContext).
+ * @param file GFile pointing to the file to be previewed.
+ */
 void update_preview_text(TabContext *ctx, GFile *file) {
     if (!ctx || !ctx->preview_text_view || !ctx->preview_revealer) return;
 
@@ -628,6 +653,12 @@ void update_preview_text(TabContext *ctx, GFile *file) {
     g_free(path);
 }
 
+/**
+ * @brief Reloads the current directory in the active tab.
+ *
+ * Repopulates the file list using the current path stored in the tab context.
+ * Useful after file operations such as create, delete, or rename.
+ */
 void reload_current_directory() {
     TabContext *ctx = get_current_tab_context();
     if (ctx && ctx->current_directory) {
@@ -635,7 +666,18 @@ void reload_current_directory() {
     }
 }
 
-// New function to handle right-click on file items
+/**
+ * @brief Callback triggered when a file item is right-clicked.
+ *
+ * Detects the selected file(s) in the grid view and creates a context menu popover
+ * positioned near the clicked item. Supports both single and multi-selection.
+ *
+ * @param gesture The click gesture controller triggering the signal.
+ * @param n_press Number of presses (unused).
+ * @param x X coordinate of the click.
+ * @param y Y coordinate of the click.
+ * @param user_data GtkWidget box that was clicked, used to anchor the popover.
+ */
 void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
 
     GtkWidget *box = GTK_WIDGET(user_data);
@@ -680,6 +722,18 @@ void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double 
     gtk_popover_popup(GTK_POPOVER(popover));
 }
 
+/**
+ * @brief Callback for right-clicking anywhere in the directory view (empty space).
+ *
+ * Shows a directory context menu (e.g., for creating folders, toggling hidden files)
+ * positioned at the click location.
+ *
+ * @param gesture The click gesture controller triggering the event.
+ * @param n_press Number of presses (unused).
+ * @param x X coordinate of the click.
+ * @param y Y coordinate of the click.
+ * @param user_data Pointer to the current TabContext.
+ */
 void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data) {
 
     TabContext *ctx = user_data;
@@ -691,6 +745,16 @@ void directory_right_clicked(GtkGestureClick *gesture, int n_press, double x, do
     gtk_popover_popup(GTK_POPOVER(popover));
 }
 
+/**
+ * @brief Deletes selected files or folders based on the received parameter string.
+ *
+ * If multiple items are selected, determines their shared directory path and deletes
+ * each target using `delete_file`. After deletion, refreshes the current directory view.
+ *
+ * @param action The GSimpleAction that triggered the callback.
+ * @param parameter GVariant string containing one or more file paths.
+ * @param user_data Not used.
+ */
 static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const char *params = g_variant_get_string(parameter, NULL);
     size_t count;
@@ -721,6 +785,16 @@ static void menu_delete_clicked(GSimpleAction *action, GVariant *parameter, gpoi
     reload_current_directory();
 }
 
+/**
+ * @brief Opens a rename dialog for a single selected file.
+ *
+ * Displays a modal dialog allowing the user to enter a new filename.
+ * On confirmation, triggers file renaming and dialog closure.
+ *
+ * @param action The GSimpleAction that triggered the rename.
+ * @param parameter GVariant string containing the full file path.
+ * @param user_data Not used.
+ */
 static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
 
     const char *params = g_variant_get_string(parameter, NULL);
@@ -743,6 +817,16 @@ static void menu_rename_clicked(GSimpleAction *action, GVariant *parameter, gpoi
     gtk_window_present(GTK_WINDOW(dialog.dialog));
 }
 
+/**
+ * @brief Closes and destroys a dialog window.
+ *
+ * Intended to be used as a signal handler for "icon-press" or "activate" events
+ * from within dialog entries (e.g., after renaming or creating folders).
+ *
+ * @param self The GtkEntry that triggered the event.
+ * @param data1 Either the entry itself or dialog window.
+ * @param data2 Optional pointer to dialog window if not in data1.
+ */
 void close_dialog_window(GtkEntry* self, gpointer data1, gpointer data2) {
     GtkWindow* dialog_window = data2 ? data2 : data1;
 
@@ -750,6 +834,16 @@ void close_dialog_window(GtkEntry* self, gpointer data1, gpointer data2) {
     gtk_window_destroy(dialog_window);
 }
 
+/**
+ * @brief Confirms and applies a file rename operation from a dialog entry.
+ *
+ * Constructs a new file path using the new name entered in the dialog, and moves
+ * the file to that path. Reloads the directory afterward to reflect the change.
+ *
+ * @param self The GtkEntry where the user typed the new name.
+ * @param data1 Pointer to the original file path.
+ * @param data2 Unused or may also contain the original file path.
+ */
 void file_rename_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
     char* src = data2 ? data2 : data1;
     const char *new_name = gtk_editable_get_text(GTK_EDITABLE(self));
@@ -769,6 +863,16 @@ void file_rename_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
     reload_current_directory();
 }
 
+/**
+ * @brief Creates a new folder with the name entered in a dialog entry.
+ *
+ * Builds the full path for the new folder under the target directory and
+ * attempts to create it using GIO APIs. Shows a warning on failure.
+ *
+ * @param self The GtkEntry where the folder name is typed.
+ * @param data1 Pointer to the base directory path.
+ * @param data2 Unused or may also contain the base directory path.
+ */
 void new_folder_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
     char* dir = data2 ? data2 : data1;
     const char *folder_name = gtk_editable_get_text(GTK_EDITABLE(self));
@@ -803,6 +907,16 @@ void new_folder_confirm(GtkEntry* self, gpointer data1, gpointer data2) {
     reload_current_directory();
 }
 
+/**
+ * @brief Opens a file properties window for the selected file.
+ *
+ * Creates a modal window displaying information about the selected file (e.g. size, date).
+ * Uses only the first file in a multi-selection input.
+ *
+ * @param action The triggered GSimpleAction.
+ * @param parameter GVariant string containing one or more file paths.
+ * @param user_data Not used.
+ */
 static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
 
     const char *params = g_variant_get_string(parameter, NULL);
@@ -818,16 +932,43 @@ static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parame
     gtk_window_present(properties_window);
 }
 
+/**
+ * @brief Callback for the Undo button in the UI.
+ *
+ * Undoes the most recent file operation recorded in the operation history,
+ * and refreshes the current directory view.
+ *
+ * @param button The GtkButton clicked.
+ * @param user_data Not used.
+ */
 void undo_button_clicked(GtkButton *button, gpointer user_data) {
     undo_last_operation();
     reload_current_directory();
 }
 
+/**
+ * @brief Callback for the Redo button in the UI.
+ *
+ * Redoes the last undone operation in the history stack and refreshes the directory.
+ *
+ * @param button The GtkButton clicked.
+ * @param user_data Not used.
+ */
 void redo_button_clicked(GtkButton *button, gpointer user_data) {
     redo_last_undo();
     reload_current_directory();
 }
 
+/**
+ * @brief Displays a dialog to create a new folder in the selected directory.
+ *
+ * Opens a modal dialog with an entry field to input the folder name. On confirmation,
+ * triggers the creation of the folder using `new_folder_confirm()`.
+ *
+ * @param action The GSimpleAction triggered.
+ * @param parameter GVariant string representing the target directory path.
+ * @param user_data Not used.
+ */
 static void menu_new_folder_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
 
     const gchar* dir = g_variant_get_string(parameter, NULL);
@@ -848,6 +989,15 @@ static void menu_new_folder_clicked(GSimpleAction *action, GVariant *parameter, 
     gtk_window_present(GTK_WINDOW(dialog.dialog));
 }
 
+/**
+ * @brief Opens a GNOME Terminal window in the specified directory.
+ *
+ * Uses a shell command to launch a terminal with the given directory as the working directory.
+ *
+ * @param action The GSimpleAction triggered.
+ * @param parameter GVariant string representing the directory path.
+ * @param user_data Not used.
+ */
 static void menu_open_terminal_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const gchar* dir = g_variant_get_string(parameter, NULL);
     if (!dir) return;
@@ -857,6 +1007,16 @@ static void menu_open_terminal_clicked(GSimpleAction *action, GVariant *paramete
     system(command);
 }
 
+/**
+ * @brief Opens the specified directory in a new tab.
+ *
+ * Triggers the same logic as the "Add Tab" button but uses a specified path instead
+ * of the default one.
+ *
+ * @param action The GSimpleAction triggered.
+ * @param parameter GVariant string representing the directory path.
+ * @param user_data Not used.
+ */
 static void menu_open_tab_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const gchar* dir = g_variant_get_string(parameter, NULL);
     if (!dir) return;
@@ -864,6 +1024,16 @@ static void menu_open_tab_clicked(GSimpleAction *action, GVariant *parameter, gp
     add_tab_with_directory(dir);
 }
 
+/**
+ * @brief Opens the specified directory in a new tab.
+ *
+ * Triggers the same logic as the "Add Tab" button but uses a specified path instead
+ * of the default one.
+ *
+ * @param action The GSimpleAction triggered.
+ * @param parameter GVariant string representing the directory path.
+ * @param user_data Not used.
+ */
 static void menu_dir_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const gchar* dir = g_variant_get_string(parameter, NULL);
     if (!dir) return;
@@ -875,17 +1045,15 @@ static void menu_dir_properties_clicked(GSimpleAction *action, GVariant *paramet
     gtk_window_present(properties_window);
 }
 
-static void menu_sort_dir_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
-    const gchar* dir = g_variant_get_string(parameter, NULL);
-    if (!dir) return;
-
-    TabContext* ctx = get_current_tab_context();
-
-    g_print("Sorting is not yet implemented\n");
-
-    reload_current_directory();
-}
-
+/**
+ * @brief Opens the directory context menu when the settings button is clicked.
+ *
+ * Creates and displays a popover with actions like "New Folder", "Open in Terminal",
+ * and "Toggle Hidden Files" anchored to the button.
+ *
+ * @param button The GtkButton clicked.
+ * @param user_data Not used.
+ */
 void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
 
     TabContext *ctx = get_current_tab_context();
@@ -897,6 +1065,17 @@ void on_settings_button_clicked(GtkButton *button, gpointer user_data) {
     gtk_popover_popup(GTK_POPOVER(popover));
 }
 
+/**
+ * @brief Comparator function for sorting files alphabetically by name.
+ *
+ * Performs a case-insensitive comparison of file basenames. Sort direction is
+ * determined by the SortContext.
+ *
+ * @param a First GFile pointer.
+ * @param b Second GFile pointer.
+ * @param user_data Pointer to SortContext with ascending/descending flag.
+ * @return Negative if a < b, positive if a > b, 0 if equal.
+ */
 gint compare_by_name(gconstpointer a, gconstpointer b, gpointer user_data) {
     const char *name_a = g_file_get_basename(G_FILE(a));
     const char *name_b = g_file_get_basename(G_FILE(b));
@@ -905,7 +1084,17 @@ gint compare_by_name(gconstpointer a, gconstpointer b, gpointer user_data) {
     return ctx->ascending ? result : -result;
 }
 
-
+/**
+ * @brief Comparator function for sorting files by last modified timestamp.
+ *
+ * Compares files based on the `G_FILE_ATTRIBUTE_TIME_MODIFIED` attribute.
+ * Direction is controlled by the SortContext.
+ *
+ * @param a First GFile pointer.
+ * @param b Second GFile pointer.
+ * @param user_data Pointer to SortContext with ascending/descending flag.
+ * @return Negative if a < b, positive if a > b, 0 if equal or on error.
+ */
 gint compare_by_date(gconstpointer a, gconstpointer b, gpointer user_data) {
     GFileInfo *info_a = g_file_query_info(G_FILE(a), G_FILE_ATTRIBUTE_TIME_MODIFIED, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileInfo *info_b = g_file_query_info(G_FILE(b), G_FILE_ATTRIBUTE_TIME_MODIFIED, G_FILE_QUERY_INFO_NONE, NULL, NULL);
@@ -923,7 +1112,17 @@ gint compare_by_date(gconstpointer a, gconstpointer b, gpointer user_data) {
     return ctx->ascending ? result : -result;
 }
 
-
+/**
+ * @brief Comparator function for sorting files by size in bytes.
+ *
+ * Retrieves file sizes using `G_FILE_ATTRIBUTE_STANDARD_SIZE` and compares them.
+ * Uses ascending or descending order based on SortContext.
+ *
+ * @param a First GFile pointer.
+ * @param b Second GFile pointer.
+ * @param user_data Pointer to SortContext with sort order flag.
+ * @return Comparison result as per qsort convention.
+ */
 gint compare_by_size(gconstpointer a, gconstpointer b, gpointer user_data) {
     GFileInfo *info_a = g_file_query_info(G_FILE(a), G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
     GFileInfo *info_b = g_file_query_info(G_FILE(b), G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
@@ -941,7 +1140,15 @@ gint compare_by_size(gconstpointer a, gconstpointer b, gpointer user_data) {
     return ctx->ascending ? result : -result;
 }
 
-
+/**
+ * @brief Sorts files in the current tab based on the specified criteria and direction.
+ *
+ * Creates a GtkSorter dynamically using the provided criteria ("name", "date", "size")
+ * and applies it to the sort model of the current tab.
+ *
+ * @param ascending TRUE for ascending sort, FALSE for descending.
+ * @param criteria Sorting key, must be "name", "date", or "size".
+ */
 void sort_files_by(gboolean ascending, const char *criteria) {
     TabContext *ctx = get_current_tab_context();
     if (!ctx || !ctx->file_store || !ctx->file_grid_view || !ctx->sort_model) return;
@@ -985,6 +1192,16 @@ void on_sort_size_desc(GSimpleAction *action, GVariant *param, gpointer user_dat
     sort_files_by(FALSE, "size");
 }
 
+/**
+ * @brief Toggles the visibility of hidden files in the directory view.
+ *
+ * Updates the global `show_hidden_files` flag based on the action state and
+ * reloads the current directory to reflect the change.
+ *
+ * @param action The GSimpleAction triggered.
+ * @param state GVariant containing the new boolean state.
+ * @param user_data Not used.
+ */
 static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *state, gpointer user_data) {
     show_hidden_files = g_variant_get_boolean(state);
     g_simple_action_set_state(action, state);
@@ -997,6 +1214,16 @@ static void toggle_hidden_action_handler(GSimpleAction *action, GVariant *state,
     g_free(path_copy);
 }
 
+/**
+ * @brief Displays a preview of a selected file if it is a text file.
+ *
+ * Uses the content type to check whether the file is textual. If so, loads the
+ * content into the preview pane.
+ *
+ * @param action The triggered GSimpleAction.
+ * @param parameter GVariant string containing the file path.
+ * @param user_data Not used.
+ */
 static void menu_preview_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
     const char *file_path = g_variant_get_string(parameter, NULL);
     if (!file_path) return;
@@ -1022,6 +1249,16 @@ static void menu_preview_clicked(GSimpleAction *action, GVariant *parameter, gpo
     g_object_unref(file);
 }
 
+/**
+ * @brief Application entry point.
+ *
+ * Creates and runs the GtkApplication instance, binding the `init` callback
+ * to construct the main UI.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return Exit code from GtkApplication.
+ */
 int main(int argc, char **argv) {
     GtkApplication *app;
     int status;
