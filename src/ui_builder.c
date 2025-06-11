@@ -464,6 +464,12 @@ GtkPopoverMenu* create_file_context_menu(const char* params, GtkWidget *window) 
     g_menu_append_item(menu, rename_item);
     g_object_unref(rename_item);
 
+    // Copy item
+    GMenuItem *copy_item = g_menu_item_new("Copy", "win.copy");
+    g_menu_item_set_action_and_target_value(copy_item, "win.copy", g_variant_new_string(params));
+    g_menu_append_item(menu, copy_item);
+    g_object_unref(copy_item);
+
     // Properties item
     GMenuItem *properties_item = g_menu_item_new("Properties", "win.properties");
     g_menu_item_set_action_and_target_value(properties_item, "win.properties", g_variant_new_string(params));
@@ -549,6 +555,12 @@ GtkPopoverMenu* create_directory_context_menu(const char* params, GtkWidget *win
     g_menu_item_set_action_and_target_value(terminal_item, "win.open_terminal", g_variant_new_string(params));
     g_menu_append_item(menu, terminal_item);
     g_object_unref(terminal_item);
+
+    // Paste item
+    GMenuItem *paste_item = g_menu_item_new("Paste", "win.dir_paste");
+    g_menu_item_set_action_and_target_value(paste_item, "win.dir_paste", g_variant_new_string(params));
+    g_menu_append_item(menu, paste_item);
+    g_object_unref(paste_item);
 
     // Sort by item
     GMenu *sort_menu = g_menu_new();

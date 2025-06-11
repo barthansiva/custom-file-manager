@@ -6,6 +6,7 @@
 #include "ui_builder.h"
 #include "main.h"
 #include "snake.h"
+#include <sys/stat.h>
 
 GtkWidget *window;
 GtkWidget *main_file_container;
@@ -48,6 +49,10 @@ static void menu_open_terminal_clicked(GSimpleAction *action, GVariant *paramete
 static void menu_open_tab_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 static void menu_dir_properties_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
+static void menu_copy_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+
+static void menu_paste_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 void undo_button_clicked(GtkButton *button, gpointer user_data);
 
@@ -100,6 +105,8 @@ static const GActionEntry win_actions[] = {
     { "rename", menu_rename_clicked, "s", NULL, NULL },
     { "properties", menu_file_properties_clicked, "s", NULL, NULL },
     { "preview", menu_preview_clicked, "s", NULL, NULL },
+    { "copy", menu_copy_clicked, "s", NULL, NULL },
+    { "dir_paste", menu_paste_clicked, "s", NULL, NULL },
     { "new_folder", menu_new_folder_clicked, "s", NULL, NULL },
     { "open_terminal", menu_open_terminal_clicked, "s", NULL, NULL },
     { "open_in_tab", menu_open_tab_clicked, "s", NULL, NULL },
@@ -930,6 +937,49 @@ static void menu_file_properties_clicked(GSimpleAction *action, GVariant *parame
     gtk_window_set_modal(properties_window, TRUE);
 
     gtk_window_present(properties_window);
+}
+
+static void menu_copy_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+
+    const char *params = g_variant_get_string(parameter, NULL);
+    size_t count;
+    char** files = split_basenames(params,";", &count);
+    if (count == 1) {
+        GFile** selected_files = g_malloc(sizeof(GFile*));
+        selected_files[0] = g_file_new_for_path(files[0]);
+        copy_files_to_clipboard(selected_files, 1, window);
+    } else {
+        GFile** selected_files = g_malloc(sizeof(GFile*)*(count-1));
+        // Extract directory path from the first element
+        char *dir_path = strdup(get_directory(files[0]));
+
+        // Loop through remaining files (starting from index 1)
+        for (size_t i = 1; i < count; i++) {
+            // Construct absolute path by combining directory path and filename
+            char *abs_path = g_build_filename(dir_path, files[i], NULL);
+            // Delete the file
+            selected_files[i-1] = g_file_new_for_path(abs_path);
+
+            // Free the constructed path
+            g_free(abs_path);
+        }
+
+        // Free the directory path
+        g_free(dir_path);
+
+       copy_files_to_clipboard(selected_files, count-1, window);
+    }
+
+    // Free the split basenames array
+    g_strfreev(files);
+}
+
+static void menu_paste_clicked(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+
+    const gchar* dir = g_variant_get_string(parameter, NULL);
+    if (!dir) return;
+
+    paste_files_from_clipboard(window, dir);
 }
 
 /**

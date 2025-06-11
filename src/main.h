@@ -2,9 +2,6 @@
 #define MAIN_H
 
 #include <gtk/gtk.h>
-#include "utils.h"
-#include "ui_builder.h"
-#include <stdlib.h>
 
 /**
  * @brief Holds state and widgets related to a single notebook tab.
@@ -60,5 +57,7 @@ void populate_files_in_container(const char *directory, GtkWidget *container, Ta
  * @param user_data The widget that was clicked (usually a GtkBox).
  */
 void file_right_clicked(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+
+void reload_current_directory();
 
 #endif //MAIN_H

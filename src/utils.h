@@ -89,6 +89,13 @@ gboolean undo_move_file(operation_t operation);
 gboolean undo_delete_file(operation_t operation);
 
 /**
+ * Undoes a paste operation by deleting the pasted file
+ * @param operation The paste operation to undo
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_paste_file(operation_t operation);
+
+/**
  * Undoes the given operation by calling the appropriate undo function
  * @param operation The operation to undo
  * @return TRUE if successful, FALSE otherwise
@@ -138,5 +145,9 @@ char* get_basename(const char* file_path);
  * Should be called before program exit
  */
 void cleanup_operation_history();
+
+void copy_files_to_clipboard(GFile **files, const size_t n_files, GtkWidget *widget);
+
+void paste_files_from_clipboard(GtkWidget *widget, gpointer user_data);
 
 #endif //UTILS_H

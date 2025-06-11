@@ -5,6 +5,7 @@
 #include <string.h>
 #include <gtk/gtk.h>
 #include <sys/stat.h>
+#include "main.h"
 
 // Operation history
 GArray *operation_history = NULL;
@@ -558,12 +559,11 @@ gboolean undo_operation(operation_t operation) {
         case OPERATION_TYPE_DELETE:
             return undo_delete_file(operation);
 
+        case OPERATION_TYPE_PASTE:
+            return undo_paste_file(operation);
+
         case OPERATION_TYPE_COPY:
             g_print("Undo for copy operation is not yet implemented\n");
-            return FALSE;
-
-        case OPERATION_TYPE_PASTE:
-            g_print("Undo for paste operation is not yet implemented\n");
             return FALSE;
 
         case OPERATION_TYPE_CREATE_DIRECTORY:
@@ -810,4 +810,242 @@ char* get_basename(const char* file_path) {
 
     // Otherwise, return everything after the last slash
     return g_strdup(last_slash + 1);
+}
+
+
+void copy_files_to_clipboard(GFile **files, const size_t n_files, GtkWidget *widget) {
+    if (files == NULL || n_files == 0 || widget == NULL) {
+        g_warning("Invalid parameters passed to copy_files_to_clipboard");
+        return;
+    }
+
+    GdkClipboard *clipboard = gtk_widget_get_clipboard(widget);
+
+    // Create a string containing URIs for all files (one URI per line)
+    GString *uri_string = g_string_new(NULL);
+
+    for (size_t i = 0; i < n_files; i++) {
+        char *uri = g_file_get_uri(files[i]);
+        if (uri != NULL) {
+            g_string_append(uri_string, uri);
+            g_string_append(uri_string, "\n");
+            g_free(uri);
+        }
+    }
+
+    // Set the text content to the clipboard
+    gdk_clipboard_set_text(clipboard, uri_string->str);
+
+    // Clean up
+    g_string_free(uri_string, TRUE);
+
+    g_print("Copied %zu file URIs to clipboard\n", n_files);
+}
+
+// Callback function to handle the pasted data
+static void on_paste_files_received(GObject *source, GAsyncResult *res, gpointer user_data) {
+    char* dir = user_data;
+    GdkClipboard *clipboard = GDK_CLIPBOARD(source);
+    GdkContentProvider *provider = gdk_clipboard_get_content(clipboard);
+    GValue value = G_VALUE_INIT;
+    g_value_init(&value, GDK_TYPE_FILE_LIST);
+    GdkFileList *file_list = NULL;
+    GError *error = NULL;
+
+    if (gdk_content_provider_get_value(provider, &value, &error)) {
+        file_list = g_value_get_object(&value);
+    } else {
+        g_warning("Failed to get content: %s", error ? error->message : "unknown error");
+        if (error) g_error_free(error);
+        return;
+    }
+
+    if (file_list == NULL) {
+        g_warning("Received null file list from clipboard");
+        return;
+    }
+
+    GSList* list = gdk_file_list_get_files(file_list);
+    if (list == NULL) {
+        g_warning("No files in clipboard");
+        return;
+    }
+
+    // Iterate through the GSList
+    for (GSList *l = list; l != NULL; l = l->next) {
+        GFile *file = G_FILE(l->data);
+        if (file) {
+            gchar *path = g_file_get_path(file);
+            // Paste file to dir
+            g_print("Pasted file: %s\n", path);
+            g_free(path);
+            // Note: Don't unref the file here as it's owned by the GSList
+        }
+    }
+
+    // The file_list ownership is handled by the GValue/GdkContentProvider
+}
+
+// Callback function to handle text URI data from clipboard
+static void on_paste_text_uris_received(GObject *source, GAsyncResult *res, gpointer user_data) {
+    char *dir = user_data;
+    GdkClipboard *clipboard = GDK_CLIPBOARD(source);
+    GError *error = NULL;
+    char *text = NULL;
+
+    // Get the text content from clipboard
+    text = gdk_clipboard_read_text_finish(clipboard, res, &error);
+    if (!text) {
+        g_warning("Failed to get text content from clipboard: %s", error ? error->message : "unknown error");
+        if (error) g_error_free(error);
+        return;
+    }
+
+    // Split the text by newlines to get individual URIs
+    char **uris = g_strsplit(text, "\n", -1);
+    if (!uris) {
+        g_warning("Failed to split URI text");
+        g_free(text);
+        return;
+    }
+
+    // Count successful copy operations for reporting
+    int copied_count = 0;
+    GError *copy_error = NULL;
+
+    // Process each URI
+    for (char **uri_ptr = uris; *uri_ptr != NULL && **uri_ptr != '\0'; uri_ptr++) {
+        // Create a GFile from the URI
+        GFile *src_file = g_file_new_for_uri(*uri_ptr);
+        if (src_file) {
+            // Get the source file information
+            char *src_path = g_file_get_path(src_file);
+            if (src_path) {
+                char *basename = g_file_get_basename(src_file);
+                if (basename) {
+                    // Create destination file path by combining target directory and basename
+                    char *dest_path = g_build_filename(dir, basename, NULL);
+                    if (dest_path) {
+                        // Create destination GFile
+                        GFile *dest_file = g_file_new_for_path(dest_path);
+                        if (dest_file) {
+                            // Check if the destination file already exists
+                            gboolean dest_exists = g_file_query_exists(dest_file, NULL);
+
+                            // Perform the copy operation with appropriate flags
+                            gboolean success = g_file_copy(
+                                src_file,
+                                dest_file,
+                                G_FILE_COPY_ALL_METADATA | (dest_exists ? G_FILE_COPY_OVERWRITE : 0),
+                                NULL,  // Cancellable
+                                NULL,  // Progress callback
+                                NULL,  // Progress callback data
+                                &copy_error
+                            );
+
+                            if (success) {
+                                copied_count++;
+
+                                // Create and add a paste operation to history for possible undo
+                                move_paths_t *paste_data = g_malloc(sizeof(move_paths_t));
+                                paste_data->source_path = g_strdup(src_path);
+                                paste_data->dest_path = g_strdup(dest_path);
+
+                                operation_t op = {
+                                    .type = OPERATION_TYPE_PASTE,
+                                    .data = paste_data
+                                };
+
+                                add_operation_to_history(op);
+                            } else {
+                                g_warning("Failed to copy file %s to %s: %s",
+                                         src_path, dest_path,
+                                         copy_error ? copy_error->message : "Unknown error");
+
+                                if (copy_error) {
+                                    g_error_free(copy_error);
+                                    copy_error = NULL;
+                                }
+                            }
+
+                            g_object_unref(dest_file);
+                        }
+                        g_free(dest_path);
+                    }
+                    g_free(basename);
+                }
+                g_free(src_path);
+            }
+            g_object_unref(src_file);
+        }
+    }
+    reload_current_directory();
+
+    // Clean up
+    g_strfreev(uris);
+    g_free(text);
+}
+
+void paste_files_from_clipboard(GtkWidget *widget, gpointer user_data) {
+    GdkClipboard *clipboard = gtk_widget_get_clipboard(widget);
+    const GdkContentFormats *formats = gdk_clipboard_get_formats(clipboard);
+
+    // First check if there's text content (our new format)
+    if (gdk_content_formats_contain_gtype(formats, G_TYPE_STRING)) {
+        // Read the text content asynchronously
+        gdk_clipboard_read_text_async(clipboard, NULL, on_paste_text_uris_received, user_data);
+    }
+}
+
+/**
+ * Undoes a paste operation by deleting the pasted file
+ * @param operation The paste operation to undo (must be OPERATION_TYPE_PASTE)
+ * @return TRUE if successful, FALSE otherwise
+ */
+gboolean undo_paste_file(operation_t operation) {
+    if (operation.type != OPERATION_TYPE_PASTE) {
+        g_warning("Attempted to undo a non-paste operation with undo_paste_file");
+        return FALSE;
+    }
+
+    move_paths_t *paths = (move_paths_t *)operation.data;
+    if (!paths || !paths->dest_path) {
+        g_warning("Invalid paste operation data");
+        return FALSE;
+    }
+
+    g_print("Undoing paste operation: Deleting %s\n", paths->dest_path);
+
+    // Create a GFile for the destination path
+    GFile *dest_file = g_file_new_for_path(paths->dest_path);
+    if (!dest_file) {
+        g_warning("Failed to create GFile for %s", paths->dest_path);
+        return FALSE;
+    }
+
+    // Check if the file exists
+    if (!g_file_query_exists(dest_file, NULL)) {
+        g_warning("File %s does not exist", paths->dest_path);
+        g_object_unref(dest_file);
+        return FALSE;
+    }
+
+    // Delete the file
+    GError *error = NULL;
+    gboolean success = g_file_delete(dest_file, NULL, &error);
+
+    if (!success) {
+        g_warning("Failed to delete file %s: %s", paths->dest_path, error ? error->message : "Unknown error");
+        if (error) {
+            g_error_free(error);
+        }
+        g_object_unref(dest_file);
+        return FALSE;
+    }
+
+    g_object_unref(dest_file);
+    g_print("Successfully undid paste operation by deleting %s\n", paths->dest_path);
+
+    reload_current_directory();
+    return TRUE;
 }
